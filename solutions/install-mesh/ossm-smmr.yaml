@@ -1,0 +1,7 @@
+apiVersion: maistra.io/v1
+kind: ServiceMeshMemberRoll
+metadata:
+  name: _DEPLOYMENT_NAME_
+  namespace: _PROJECT_NAME_
+spec:
+  members:

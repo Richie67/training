@@ -1,0 +1,876 @@
+#
+# Copyright 2019 Red Hat, Inc.
+#
+# NAME
+#     labtool.do328.shlib - lab grading script do328 function library
+#
+# SYNOPSIS
+#     Add the following line at the top of your script:
+#
+#        source /path/to/labtool.do328.shlib
+#
+#     *after* the source of the generic labtool.shlib
+#
+# DESCRIPTION
+#
+# CHANGELOG
+#   * Tue Jun 04 2019 George Hacker <ghacker@redhat.com>
+#   - create template
+
+#########################################################################
+##########################################################################
+##                   How to use this template:
+##
+## 1. Rename the file to labtool.<platform>.shlib
+## 2. Adjust the comments above
+## 3. Add functions below here to override and/or supplement
+##    labtool.shlib
+## 4. Remove these "How to use this template" comments
+##########################################################################
+##########################################################################
+
+
+# vim: ts=4 sw=2
+
+# Get RHT_* variable definitions
+[[ -f /etc/rht ]] && source /etc/rht
+
+COURSE="DO328"
+COURSE_HOME="/home/student/${COURSE}"
+
+
+##########################################################################
+## Global variables
+## Those are used by the functions but should not require customization
+##########################################################################
+
+labs="${COURSE_HOME}/labs"
+solutions="${COURSE_HOME}/solutions"
+curl_save='curl -s -S -o'
+materials="http://content.example.com/courses/${RHT_COURSE}/${RHT_VMTREE%/*}/materials"
+contents="http://content.example.com"
+
+TIMEOUT=6
+
+# IMPORTANT: Keep this in sync with the lab-configure script
+RHT_OCP4_CONFIG=/usr/local/etc/ocp4.config
+
+source ${RHT_OCP4_CONFIG} &>/dev/null
+
+
+##########################################################################
+## Generic functions
+## Those should be reusable without changes by other courses
+##########################################################################
+
+function ocp4_create_downloads_folder {
+
+  local folder='/home/student/Downloads'
+  if ! [ -d "${folder}" ]; then
+    ocp4_pad "Create the student's Downloads folder"
+    if mkdir "${folder}" && chown student:student "${folder}"
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+}
+
+
+function ocp4_pad {
+  pad2 "$@"
+}
+
+
+function ocp4_print_prereq_header {
+  print_header "Checking prerequisites for ${title}"
+}
+
+
+function ocp4_print_setup_header {
+  print_header "Setting up the classroom for ${title}"
+}
+
+
+function ocp4_print_setup_footer {
+  print_line
+  pad 'Overall start status'
+
+  if [[ ${fail_count} -eq 0 ]]
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+  print_line
+}
+
+function ocp4_print_solve_footer {
+  print_line
+  pad 'Overall status'
+
+  if [[ ${fail_count} -eq 0 ]]
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+  print_line
+}
+
+function ocp4_print_grade_header {
+  print_header "Grading the student's work for ${title}"
+}
+
+function ocp4_print_solve_header {
+  print_header "Solving ${title}"
+}
+
+
+function ocp4_print_grade_footer {
+  print_line
+  pad 'Overall exercise grade'
+  if [[ ${fail_count} -eq 0 ]]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  print_line
+}
+
+
+function ocp4_print_cleanup_header {
+  print_header "Completing ${title}"
+}
+
+
+function ocp4_print_cleanup_footer {
+  print_header "Please use start if you wish to do the exercise again."
+}
+
+
+function ocp4_download_file {
+  local final_name="$1"
+  local destination="$2"
+  local url="$3"
+
+  pad " · Download ${final_name}"
+
+  ${curl_save} "${destination}/${final_name}" "${url}"
+  if [ -f "${destination}/${final_name}" ]; then
+    chown -R student:student "${destination}"
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+}
+
+function ocp4_delete_lab_files_if_present {
+  if [[ -d "${labs}/${this}" ]]; then
+    rm -rf "${labs}/${this}"
+  fi
+
+  if [[ -d "${solutions}/${this}" ]]; then
+    rm -rf "${solutions}/${this}"
+  fi
+}
+
+
+function ocp4_grab_lab_files {
+  local no_solution="$1"
+
+  #print_line " Downloading files for ${title}"
+
+  if [ -d "${labs}/${this}" ]; then
+    #print_line " Files were already been downloaded. Use finish if you want to start over."
+    #print_line
+    pad ' · Skip download of exercise and solution files'
+    print_SUCCESS
+    return
+  fi
+
+  pad ' · Download exercise files'
+  mkdir -p "${labs}/${this}"
+  chown student:student "${COURSE_HOME}"
+  chown student:student "${labs}"
+
+  ${curl_save} ${labs}/${this}.tgz ${materials}/labs/${this}.tgz
+  if [ -f "${labs}/${this}.tgz" ]; then
+    pushd ${labs}
+    if tar xzf ${this}.tgz ; then
+      rm -f ${this}.tgz
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+    popd
+  else
+    print_FAIL
+  fi
+
+  chown -R student:student "${labs}/${this}"
+
+  if [ "${no_solution}" == "" ]; then
+    pad ' · Download solution files'
+    mkdir -p "${solutions}/${this}"
+    chown student:student "${solutions}"
+
+    ${curl_save} ${solutions}/${this}.tgz ${materials}/solutions/${this}.tgz
+    if [ -f "${solutions}/${this}.tgz" ]; then
+      pushd ${solutions}
+      if tar xzf ${this}.tgz; then
+        rm -f ${this}.tgz
+        print_SUCCESS
+      else
+        print_FAIL
+      fi
+      popd
+    else
+      print_FAIL
+    fi
+
+    chown -R student:student "${solutions}/${this}"
+  fi
+}
+
+
+function ocp4_cleanup_lab_files
+{
+  if [ -d "${labs}/${this}" ]
+  then
+    pad ' · Remove exercise files'
+    rm -fr ${labs}/${this}
+    print_SUCCESS
+  fi
+
+  if [ -d "${solutions}/${this}" ]
+  then
+    pad ' · Remove solution files'
+    rm -fr ${solutions}/${this}
+    print_SUCCESS
+  fi
+}
+
+function ocp4_login {
+
+  API=$1
+  USER=$2
+  PASSWORD=$3
+
+ # IMPORTANT: Keep this code in sync with the lab-configure script
+
+  if ! curl --connect-timeout "${TIMEOUT}" -sk "${API}/apis/config.openshift.io/v1" &>/dev/null
+  then
+    print_FAIL
+    print_line
+    fatal 9 "Cannot connect to the OpenShift API. Please check your network connectivity."
+  fi
+
+  if ! oc login -u "${USER}" -p "${PASSWORD}" --insecure-skip-tls-verify "${API}" &>/dev/null
+  then
+    print_FAIL
+    print_line
+    fatal 9 "Cannot login to OpenShift."
+  fi
+
+  print_SUCCESS
+}
+
+function ocp4_login_as_admin {
+
+  # IMPORTANT: Keep this code in sync with the lab-configure script
+  ocp4_pad 'Log in to OpenShift'
+  ocp4_check_config
+  ocp4_login ${RHT_OCP4_API} ${RHT_OCP4_ADMIN_USER} ${RHT_OCP4_ADMIN_PASSWORD}
+}
+
+function ocp4_login_as_developer {
+
+  # IMPORTANT: Keep this code in sync with the lab-configure script
+  ocp4_pad 'Log in to OpenShift as developer'
+  ocp4_check_config
+  ocp4_login ${RHT_OCP4_API} ${RHT_OCP4_DEV_USER} ${RHT_OCP4_DEV_PASSWORD}
+}
+
+
+function ocp4_check_config {
+    if ! [ -r ${RHT_OCP4_CONFIG} ]; then
+    print_FAIL
+    print_line
+    fatal 9 'You need to perform GE "Configuring the Classroom Environment" before starting any exercise.'
+  fi
+}
+
+function ocp4_check_pod_ready_and_running {
+  local project="$1"
+  local selector="$2"
+
+  local pod=$(oc get pod -l "${selector}" -n "${project}" -o name --field-selector=status.phase=Running)
+  local pod_ready=$(oc get "${pod}" -n "${project}" -o jsonpath="{.status.conditions[?(@.type=='Ready')].status}")
+  local container_ready=$(oc get "${pod}" -n "${project}" -o jsonpath="{.status.containerStatuses[0].ready}")
+  test "${pod_ready}" = "True" -a "${container_ready}" = "true"
+}
+
+
+function ocp4_is_cluster_up {
+
+  print_line ' Verifying the OpenShift cluster is running:'
+  ocp4_login_as_admin
+
+  for node in $(oc get node -o jsonpath="{.items[*].metadata.name}" -l node-role.kubernetes.io/master); do
+    ocp4_pad "Check if leader node ${node} is ready"
+    local status=$(oc get node ${node} -o jsonpath="{.status.conditions[?(@.type=='Ready')].status}")
+    if [ "${status}" = "True" ]; then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  done
+
+  ocp4_pad "Check the internal registry is up and running"
+  if ocp4_check_pod_ready_and_running 'openshift-image-registry' 'docker-registry=default'
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+}
+
+function ocp4_is_sm_installed {
+  local project_name="${1:-istio-system}"
+  local deployment_name="${2:-basic-install}"
+
+  local deployment_status=$(oc get smcp -n ${project_name} -o jsonpath="{.items[?(@.metadata.name=='${deployment_name}')].status.conditions[?(@.type=='Ready')].status}")
+  # ,, turns var into lower case
+  if [ "${deployment_status,,}" = "true" ]
+  then
+    return 0
+  else
+    return 1
+  fi
+}
+
+function ocp4_check_sm_installed {
+  local project_name="${1:-istio-system}"
+  local deployment_name="${2:-basic-install}"
+
+  print_line 'Verifying OpenShift Service Mesh:'
+  ocp4_login_as_admin
+  ocp4_pad "Checking ServiceMeshControlPlane ${deployment_name}"
+  if ocp4_is_sm_installed ${project_name} ${deployment_name}
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    print_line
+    fatal 13 "Service Mesh instance not found. Complete the guided exercise 'Installing a Service Mesh', or run 'lab install-mesh solve' to automatically install a service mesh instance"
+  fi
+
+  ocp4_pad "Checking ServiceMeshMemberRoll default"
+  if ocp4_sm_exists_smmr 'default' "${project_name}"
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+    print_line
+    fatal 14 "Service Mesh Member Roll not found. Complete the guided exercise 'Installing a Service Mesh', or run 'lab install-mesh solve' to automatically create a Service Mesh Member Roll"
+  fi
+}
+
+function ocp4_verify_sm_installed {
+  local project_name="$1"
+  local deployment_name="$2"
+
+  print_line 'Verifying successful installation of OpenShift Service Mesh:'
+  ocp4_pad "Checking ServiceMeshControlPlane ${deployment_name}"
+  if ocp4_is_sm_installed ${project_name} ${deployment_name}
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_pad "Checking ServiceMeshMemberRoll default"
+  if ocp4_sm_exists_smmr 'default' "${project_name}"
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+}
+
+function ocp4_install_sm {
+  local project_name="$1"
+
+  ocp4_login_as_admin
+
+  ocp4_pad "Checking project ${project_name} does not exist"
+  if oc get project ${project_name} &>/dev/null
+  then
+    print_FAIL
+  else
+    print_SUCCESS
+  fi
+
+  ocp4_pad "Deploying operators"
+  if [[ ${fail_count} -eq 0 ]] && ocp4_deploy_ossm_operators
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  ocp4_login_as_developer
+
+  ocp4_pad "Creating project ${project_name}"
+  if [[ ${fail_count} -eq 0 ]] && oc new-project ${project_name}
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  ocp4_pad "Waiting for operators to finish deployment in ${project_name}"
+  local fail="false"
+  if [[ ${fail_count} -eq 0 ]] && ocp4_are_sm_operators_ready_in_project "${project_name}"
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  ocp4_pad "Deploying Control Plane"
+  if [[ ${fail_count} -eq 0 ]] && oc create -f ${solutions}/${this}/ossm-install.yml && ocp4_wait_for_control_plane_readiness ${project_name}
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  ocp4_pad "Creating ServiceMeshMemberRoll"
+  if [[ ${fail_count} -eq 0 ]] && ocp4_sm_create_smmr 'default' "${project_name}"
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+}
+
+function ocp4_deploy_ossm_operators {
+  for operator in {es,jaeger,kiali,sm}; do
+    local operatorYamlFile="${solutions}/${this}/${operator}.yml"
+    if ! oc create -f ${operatorYamlFile}; then
+      print_FAIL
+      print_line
+      print_line "Failed to deploy ${operatorYamlFile}. Please run lab uninstall-service-mesh start and try again"
+      return 1
+    fi
+  done
+}
+
+function ocp4_clean_operator_test_plans {
+  oc delete installplan -n openshift-operators --all
+}
+
+function ocp4_can_deploy_in_istio_system {
+  ocp4_login_as_developer
+  ocp4_pad "Checking developer user permissions in istio-system"
+  if ocp4_check_permissions_in_project "create" "pods" "istio-system"; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+}
+
+function ocp4_check_permissions_in_project {
+  local verb="$1"
+  local noun="$2"
+  local project="$3"
+
+  local can_i="$(oc auth can-i ${verb} ${noun} -n ${project})"
+
+  if [[ "${can_i,,}" = "yes" ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
+function ocp4_are_sm_operators_ready_in_project {
+  local project="$1"
+
+  for i in {1..120}; do
+    sleep 3
+    local operators_ready=`oc get ClusterServiceVersion -n "${project}" | grep "Succeeded" | wc -l`
+
+    if [ ${operators_ready} = 4 ]
+    then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+function ocp4_print_smmr_state_for_project {
+  local project="$1"
+  local smmr_project="${2:-istio-system}"
+  
+  ocp4_pad "Checking that project ${project} joined Service Mesh"
+  if ocp4_wait_for_smmr_label $project $smmr_project; then
+   print_SUCCESS
+  else
+    print_FAIL
+  fi
+}
+
+function ocp4_wait_for_smmr_label {
+  local project="$1"
+  local smmr_project="${2:-istio-system}"
+
+  for i in {1..30}; do 
+    sleep 2
+    if oc get projects -l maistra.io/member-of="$smmr_project" -o name | awk -F '/' '{print $2}' | grep "$project"; then
+      echo "maistra.io/member-of label found in project $project"
+      return 0
+    fi
+  done
+
+  echo "Project $project does not have maistra label; does the project exist?"
+  return 1
+}
+
+function ocp4_wait_for_control_plane_readiness {
+  local project_name="$1"
+  local deployment_name="basic-install"
+
+  for i in {1..180}; do
+    sleep 5
+    local deployment_status=$(oc get smcp -n ${project_name} -o jsonpath="{.items[?(@.metadata.name=='${deployment_name}')].status.conditions[?(@.type=='Ready')].status}")
+    # ,, turns var into lower case
+    if [[ "${deployment_status,,}" = "true" ]]; then
+      return 0
+    fi
+  done
+  echo "timing out waiting for control plane readiness" # gets printed to logs
+  return 1
+}
+
+function ocp4_sm_exists_smmr {
+  local deployment_name="$1"
+  local project_name="$2"
+
+  oc get servicemeshmemberroll "${deployment_name}" -n "${project_name}"
+
+  return $?
+}
+
+function ocp4_sm_create_smmr {
+  local name="$1"
+  local project="$2"
+
+  local smmr=`sed -e "s/_DEPLOYMENT_NAME_/${name}/" -e "s/_PROJECT_NAME_/${project}/" "${solutions}/${this}/ossm-smmr.yaml"`
+
+  echo "${smmr}" | oc apply -f -
+
+  return $?
+}
+
+function ocp4_delete_project {
+  #vararg
+  local project="$1"
+
+  while [ "${project}" != "" ]
+  do
+
+    if oc get project "${project}"
+    then
+      local project_status="$(oc get namespace ${project} -o jsonpath='{.status.phase}')"
+      # Normal projects have a status of "Active"
+      # A project which has just been deleted by a student may a status of "Terminating"
+      if [ "${project_status}" == "Active" ]
+      then
+        pad " · Delete OpenShift project '${project}'"
+        if oc delete project "${project}" --wait=true
+        then
+          print_SUCCESS
+
+          pad " · Wait for project '${project}' to be gone"
+          local RETRIES=15
+          while [ "${RETRIES}" != 0 ]; do
+            sleep 3
+            if oc get project "${project}" -o name
+            then
+              # do nothing
+              true
+            else
+              print_SUCCESS
+              break
+            fi
+            let RETRIES=RETRIES-1
+          done
+          if [ "${RETRIES}" = 0 ]; then
+            print_FAIL
+            print_line 'Too many tries, giving up'
+          fi
+        else
+          print_FAIL
+        fi
+      fi
+    fi
+
+    shift
+    project="$1"
+  done
+}
+
+function ocp4_logout {
+  pad " · Log out from OpenShift"
+  if oc logout
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+}
+
+function ocp4_new_project {
+  local project="$1"
+
+  ocp4_pad "Creating project ${project}"
+  spinner_while "oc new-project ${project}"
+}
+
+function ocp4_deploy_solutions {
+    local project="$1"
+    local files="$2"
+    ocp4_pad "Deploying project files"
+    for file in ${files//,/ }
+    do
+      if ! oc create -n ${project} -f ${solutions}/${this}/${file}
+      then
+        print_FAIL
+        return
+      fi
+    done
+    print_SUCCESS
+}
+
+function ocp4_deploy_lab_files {
+    local project="$1"
+    local files="$2"
+    ocp4_pad "Deploying project lab files"
+    for file in ${files//,/ }
+    do
+      if ! oc create -n ${project} -f ${labs}/${this}/${file}
+      then
+        print_FAIL
+        return
+      fi
+    done
+    print_SUCCESS
+}
+
+
+function ocp4_process_template_solution {
+    local project="$1"
+    local template="$2"
+    local values=( "${@:3}" )             # The rest are params for the template (PAR=val)
+    local params=( "${values[@]/#/-p }" ) # Prefix them with "-p "
+    ocp4_pad "Processing application template"
+    if oc process -f ${solutions}/${this}/${template} ${params[@]} | oc -n ${project} create -f -
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+
+}
+
+function ocp4_sm_add_projects_to_smmr {
+  projects="$1"
+  smmr_project="${2:-istio-system}"
+  smmr_name="${3:-default}"
+
+  ocp4_pad "Updating projects in Service Mesh Member Roll"
+  if oc patch smmr ${smmr_name} -n ${smmr_project} --type json -p "[{\"op\":\"replace\",\"path\":\"/spec/members\",\"value\": [ ${projects} ] }]"
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+}
+
+function ocp4_set_projects_to_smmr {
+  projects="$1"
+  smmr_project="${2:-istio-system}"
+  smmr_name="${3:-default}"
+
+  ocp4_pad "Removing project $project from Service Mesh Member Roll"
+  if oc patch smmr ${smmr_name} -n $smmr_project --type json -p "[{\"op\":\"replace\",\"path\":\"/spec/members\",\"value\": [ $projects ] }]"
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+}
+
+function ocp4_wait_operator_ready {
+  local project_name="$1"
+  local operator="${2:-servicemeshoperator}"
+  ocp4_pad "Waiting for the \"${operator}\" operator to be ready."
+  spinner_while "oc get ClusterServiceVersion -n ${project_name} | grep \"${operator}\" | grep -q \"Succeeded\""
+}
+
+function ocp4_get_route_host_into {
+   local target="$1"
+   local project="$2"
+   local route_name="$3"
+
+   eval $target=`oc get route $route_name -n $project -o jsonpath="{.spec.host}"`
+}
+
+function ocp4_get_route_url_into {
+  local target="$1"
+  local project="$2"
+  local route_name="$3"
+
+  local route_path=$(oc get route $route_name -n $project -o jsonpath="{.spec.host}{.spec.path}")
+
+  eval $target="${route_path}"
+}
+
+function spinner_while {
+  local command="$1"
+  local -r spinchars=( '|' '/' '-' '\' )
+  local s=0
+  printf "[${spinchars[${s}]}]" >&3
+  for i in {1..90}; do
+    if eval "${command}"; then
+      printf '\b\b\b' >&3
+      print_SUCCESS
+      return
+    else
+      sleep 3
+      printf "\b\b${spinchars[$((++s%4))]}]" >&3
+    fi
+  done
+  printf '\b\b\b' >&3
+  print_FAIL
+}
+
+function ocp4_change_egress_config_to {
+  MODE="$1"
+  ocp4_pad "Updating egress configuration"
+
+  if [ "$MODE" = "ALLOW_ANY" ] || [ "$MODE" = "REGISTRY_ONLY" ]; then
+    MODE="\"$MODE\""
+  elif [ "$MODE" = "" ] || [ "$MODE" = "null"]; then
+    MODE="null"
+  else
+    fatal 9 "Unknown egress config mode: $MODE\n  Only ALLOW_ANY, REGISTRY_ONLY , null or empty allowed"
+  fi
+
+  # TODO: Find a more generic way to allow any config change
+  if oc patch smcp basic-install -n istio-system --type merge -p "{\"spec\":{\"istio\":{\"global\":{\"outboundTrafficPolicy\":{\"mode\":$MODE }}}}}"; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+}
+
+function ocp4_sm_clean_smmr {
+  smmr_project="${1:-istio-system}"
+  smmr_name="${2:-default}"
+
+  ocp4_sm_add_projects_to_smmr "" "${smmr_project}" "${smmr_name}"
+}
+
+function print_pass_fail_service_running {
+  local project="$1"
+  local label="$2"
+
+  if ocp4_check_pod_ready_and_running "$project" "$label"
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+}
+
+function ocp4_check_greet_app_pod_replicas {
+  local project="$1"
+
+  ocp4_check_pod_replicas "czech" 2 $project
+  ocp4_check_pod_replicas "english-v1" 2 $project
+  ocp4_check_pod_replicas "greet-api" 2 $project
+  ocp4_check_pod_replicas "spanish" 2 $project
+}
+
+function ocp4_check_exchange_app_pod_replicas {
+  local project="$1"
+
+  ocp4_check_pod_replicas "currency" 2 $project
+  ocp4_check_pod_replicas "exchange" 2 $project
+  ocp4_check_pod_replicas "frontend" 2 $project
+  ocp4_check_pod_replicas "history" 2 $project
+}
+
+function ocp4_check_vertx_greet_app_pod_replicas {
+  local project="$1"
+
+  ocp4_check_pod_replicas "vertx-greet-v1" 2 $project
+}
+
+function ocp4_check_payment_app_pod_replicas {
+  local project="$1"
+
+  ocp4_check_pod_replicas "gateway" 2 $project
+  ocp4_check_pod_replicas "payment" 2 $project
+}
+
+function ocp4_check_recommendation_app_pod_replicas {
+  local project="$1"
+
+  ocp4_check_pod_replicas "customer" 2 $project
+  ocp4_check_pod_replicas "preference" 2 $project
+  ocp4_check_pod_replicas "recommendation" 2 $project
+}
+
+function ocp4_check_adoption_app_pod_replicas {
+  local project="$1"
+
+  ocp4_check_pod_replicas "animal-v1" 2 $project
+  ocp4_check_pod_replicas "frontend-v1" 2 $project
+  ocp4_check_pod_replicas "mongodb" 2 $project
+  ocp4_check_pod_replicas "notification" 2 $project
+  ocp4_check_pod_replicas "shelter" 2 $project
+}
+
+function ocp4_check_pod_replicas {
+  local pod_selector="$1"
+  local expected_replicas="$2"
+  local project="$3"
+
+  ocp4_pad "Check ${pod_selector} pod has ${expected_replicas} replicas"
+
+  for i in {1..10}; do
+    if oc get pods -n $project | grep -q $pod_selector
+    then
+      break
+    fi
+    sleep 1
+  done
+
+  if oc get pods -n $project | grep $pod_selector | grep -q "/${expected_replicas}"; then
+    print_SUCCESS
+  else
+    print_FAIL
+    print_line "The number of ${pod_selector} pod replicas does not match ${expected_replicas}."
+    print_line "Please try to redeploy the pod with 'oc delete pod <pod-name> -n ${project}'."
+  fi
+}

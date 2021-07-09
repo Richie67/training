@@ -1,0 +1,13 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: frontend-pool
+spec:
+  host: frontend
+  trafficPolicy:
+    connectionPool:
+      http:
+        http1MaxPendingRequests: 5
+        maxRequestsPerConnection: 10
+      tcp:
+        maxConnections: 5

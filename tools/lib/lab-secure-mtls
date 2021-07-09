@@ -1,0 +1,108 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-secure-mtls
+#
+# SYNOPSIS
+#     lab secure-mtls {start|finish}
+#
+# DESCRIPTION
+#     This script is used to start, conclude, grade, or solve the chapter 8 section 4 guided
+#     exercise.
+#
+# CHANGELOG
+#   * Wed Apr 15 2020 Marek Czernek <mczernek@redhat.com>
+#   - Initial commit
+#
+# REFERENCES
+#     Applications
+#         https://github.com/RedHatTraining/DO328-apps/tree/master/customer
+#         https://github.com/RedHatTraining/DO328-apps/tree/master/preference
+#         https://github.com/RedHatTraining/DO328-apps/tree/master/recommendation
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin
+
+# Initialize and set some variables
+run_as_root='true'
+
+# Required by the do328 shlib
+this='secure-mtls'
+title='GE: Configurint Mutual TLS'
+project='mtls'
+
+declare -a valid_commands=(start finish)
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+  ocp4_is_cluster_up
+  if ! ocp4_is_sm_installed; then
+    fatal 9 "Service Mesh is not installed. Execute lab install-mesh solve to install Service Mesh."
+  fi
+
+  ocp4_print_setup_header
+  ocp4_login_as_developer
+  ocp4_grab_lab_files
+ 
+  ocp4_pad "Creating project ${project}"
+  if oc new-project "${project}"; then 
+    print_SUCCESS 
+  else
+    print_FAIL
+  fi
+
+  ocp4_sm_add_projects_to_smmr "${project}"
+  ocp4_print_smmr_state_for_project "${project}"
+
+  ocp4_pad "Waiting for operators to deploy in ${project}"
+  if ocp4_are_sm_operators_ready_in_project "${project}"; then
+    print_SUCCESS 
+  else
+    print_FAIL
+  fi
+
+  ocp4_pad 'Deploying application'
+  if oc create -n "${project}" -f "${labs}/${this}/app-deployment.yml"; then 
+    print_SUCCESS 
+  else
+    print_FAIL
+  fi
+
+  ocp4_check_recommendation_app_pod_replicas $project
+
+  ocp4_print_setup_footer
+
+}
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_pad 'Cleaning up the Workstation VM'
+  ocp4_delete_lab_files_if_present
+  print_SUCCESS
+
+  ocp4_login_as_admin
+
+  ocp4_pad "Deleting ${project}"
+  if oc delete project "${project}"; then
+    print_SUCCESS 
+  else
+    print_FAIL
+  fi
+
+  ocp4_sm_clean_smmr
+
+  ocp4_print_cleanup_footer
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

@@ -1,0 +1,128 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-traffic-external - lab script used to exercise egress trafic in the Service Mesh.
+#
+# SYNOPSIS
+#     lab-traffic-external {start|finish|grade}
+#
+#        start - verify prerequisites for installing OpenShift Service Mesh
+#        finish - noop
+#        grade  - verify successful deployment of OpenShift Service Mesh
+#        solve  - install OpenShift Service Mesh
+#
+# DESCRIPTION
+#     This script is used to start, conclude, grade, or solve the chapter 4 section 6 guided 
+#     exercise.
+#
+# CHANGELOG
+#   * Fri Apr 5 2020 Jordi Sola <jordisola@redhat.com>
+#   - Initial commit
+#
+# REFERENCES
+#     Applications
+#         https://github.com/RedHatTraining/DO328-apps/tree/master/mczernek-exchange-application (Financial app)
+#         https://github.com/RedHatTraining/DO328-apps/tree/master/python-flask-gossip (News service)
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin
+
+# Initialize and set some variables
+run_as_root='true'
+
+# Required by the do328 shlib
+this='traffic-external'
+title='GE: Accessing External Services'
+
+istio_project='istio-system'
+
+# TODO: Decide if 'reset' is a valid command.
+declare -a valid_commands=(start finish solve)
+
+function lab_start {
+  ISTIO_INGRESS_GW=''
+  NEWS_URL=''
+
+  ocp4_print_prereq_header
+  ocp4_is_cluster_up   #This logs as admin
+  ocp4_is_sm_installed "$istio_project" 'basic-install'
+
+  ocp4_print_setup_header
+  ocp4_grab_lab_files
+
+  ocp4_sm_add_projects_to_smmr "$this"
+  ocp4_get_route_host_into ISTIO_INGRESS_GW "$istio_project" "istio-ingressgateway"
+
+  ocp4_login_as_developer
+
+  ocp4_new_project "$this-news"
+  ocp4_deploy_solutions "$this-news" "news_app.yml"
+  ocp4_get_route_url_into NEWS_URL "$this-news" "news"
+
+  ocp4_new_project $this
+  ocp4_print_smmr_state_for_project "${this}"
+  ocp4_wait_operator_ready $this "servicemeshoperator" 
+  ocp4_process_template_solution $this "financial_app.yml" "INGRESS_GW=$ISTIO_INGRESS_GW" "NEWS_ENDPOINT=$NEWS_URL" "FRONTEND_TAG=2.0" "EXCHANGE_TAG=2.0"
+
+  ocp4_check_exchange_app_pod_replicas $this
+
+  ocp4_print_setup_footer
+
+}
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+  ocp4_delete_lab_files_if_present
+
+  ocp4_login_as_admin
+  ocp4_change_egress_config_to ""
+  ocp4_sm_clean_smmr
+
+  ocp4_login_as_developer  
+  ocp4_delete_project "$this"
+  ocp4_delete_project "$this-news"
+  
+  ocp4_print_cleanup_footer
+}
+
+function lab_grade {
+
+  ocp4_print_grade_header
+
+  ocp4_pad "Nothing to grade in this GE"
+
+  ocp4_print_grade_footer
+
+}
+
+function lab_solve {
+
+  ocp4_print_solve_header
+  # Solve yamls might be modified - re-download them
+  ocp4_delete_lab_files_if_present
+  ocp4_grab_lab_files
+
+  ocp4_login_as_admin
+  ocp4_change_egress_config_to "REGISTRY_ONLY"
+
+  ocp4_login_as_developer  
+  #Create the serviceentry with the right host.
+  ocp4_pad "Creating serviceentry for the news service"
+  NEWS_HOST=''
+  ocp4_get_route_host_into NEWS_HOST "traffic-external-news" "news"
+  sed -e "s/_NEWS_HOST_/$NEWS_HOST/g" "${solutions}/${this}/news_serviceentry.yml" | oc create -f -
+  print_SUCCESS
+
+  ocp4_print_solve_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

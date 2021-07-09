@@ -1,0 +1,434 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-comprehensive-review
+#
+# SYNOPSIS
+#     lab-comprehensive-review {start|finish|grade}
+#
+#        start - Deploy starter application into OpenShift Service Mesh
+#        finish - Remove application project from OpenShift Service Mesh
+#        grade - Grade the lab
+#
+# DESCRIPTION
+#     This script is used to start/finish/grade the chapter 9 section 2 lab.
+#
+# CHANGELOG
+#   * Wed Jun 15 2020 Ravi Srinivasan <ravis@redhat.com>
+#   - Initial commit
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin
+
+# Initialize and set some variables
+run_as_root='true'
+
+# Required by the do328 shlib
+this='comprehensive-review'
+project='adoptapup'
+news='adoptapup-news'
+title='Comprehensive Review: Building Resilient Microservices'
+
+istio_project='istio-system'
+istio_deployment_name='basic-install'
+istio_route='istio-ingressgateway'
+labs="/home/student/DO328/labs"
+
+declare -a valid_commands=(start finish grade)
+
+function lab_start {
+
+  ocp4_print_prereq_header
+  ocp4_is_cluster_up
+  ocp4_check_sm_installed ${istio_project} ${istio_deployment_name}
+
+  ocp4_print_setup_header
+  ocp4_grab_lab_files
+  ocp4_login_as_developer
+
+  ocp4_new_project "${news}"
+  ocp4_deploy_service "${news}" "news-service.yaml" "Deploying news service"
+
+  ocp4_new_project "${project}"
+  ocp4_sm_add_projects_to_smmr "${project}"
+  ocp4_print_smmr_state_for_project "${project}"
+  ocp4_wait_operator_ready "${project}"
+
+  deploy_mongodb
+  wait_pod_running "app=mongodb"
+  populate_mongodb
+
+  ocp4_deploy_service "${project}" "animal-service-v1.yaml" "Deploying animal service"
+  ocp4_deploy_service "${project}" "shelter-service.yaml" "Deploying shelter service"
+  ocp4_deploy_service "${project}" "email-service.yaml" "Deploying email service"
+  ocp4_deploy_service "${project}" "notification-service.yaml" "Deploying notification service"
+  ocp4_deploy_service "${project}" "frontend-service-v1.yaml" "Deploying frontend service"
+
+  # restrict egress to only registered microservices
+  # need to do this as admin
+  ocp4_login_as_admin
+  oc patch smcp ${istio_deployment_name} --type merge -n ${istio_project} -p '{"spec":{"istio":{"global":{"outboundTrafficPolicy":{"mode":"REGISTRY_ONLY"}}}}}'
+
+  ocp4_login_as_developer
+
+  ocp4_check_adoption_app_pod_replicas "${project}"
+
+  ocp4_print_setup_footer
+
+}
+
+function wait_pod_running {
+  local selector="${1}"
+  local namespace="${2:-adoptapup}"
+  ocp4_pad "Waiting for the pod labeled \"${selector}\" to be running."
+  spinner_while "oc get pod --selector=${selector} -n ${namespace} -o jsonpath='{..status.phase}' | grep -q \"Running\""
+}
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_cleanup_lab_files
+  ocp4_login_as_admin
+  ocp4_sm_clean_smmr
+  ocp4_delete_project "${project}"
+  ocp4_delete_project "${news}"
+  ocp4_logout
+
+  ocp4_print_cleanup_footer
+
+}
+
+function lab_grade {
+  ocp4_print_grade_header
+
+  ocp4_login_as_admin
+
+  print_line
+  print_line ' Verifying Lab'
+
+  ISTIO_INGRESS_GW=''
+  ocp4_get_route_host_into ISTIO_INGRESS_GW "${istio_project}" "${istio_route}"
+
+  ocp4_pad "Check if project ${project} exists"
+  if oc get project "${project}" -o name
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_pad "Check if adoption service is up and running"
+  print_pass_fail_service_running "${project}" 'app=adoption'
+
+  ocp4_pad "Check if animal service v1 is up and running"
+  print_pass_fail_service_running "${project}" 'app=animal,version=v1'
+
+  ocp4_pad "Check if animal service v2 is up and running"
+  print_pass_fail_service_running "${project}" 'app=animal,version=v2'
+
+  ocp4_pad "Check if email service is up and running"
+  print_pass_fail_service_running "${project}" 'app=email'
+
+  ocp4_pad "Check if frontend service v1 is up and running"
+  print_pass_fail_service_running "${project}" 'app=frontend,version=v1'
+
+  ocp4_pad "Check if frontend service v2 is up and running"
+  print_pass_fail_service_running "${project}" 'app=frontend,version=v2'
+
+  ocp4_pad "Check if mongodb service is up and running"
+  print_pass_fail_service_running "${project}" 'app=mongodb'
+
+  ocp4_pad "Check if notification service is up and running"
+  print_pass_fail_service_running "${project}" 'app=notification'
+
+  ocp4_pad "Check if shelter service is up and running"
+  print_pass_fail_service_running "${project}" 'app=shelter'
+
+  ocp4_pad "Check if news service is up and running"
+  print_pass_fail_service_running "${news}" 'app=news'
+
+  check_url "${ISTIO_INGRESS_GW}/frontend" 'Hello' 'Check if front end is accessible'
+
+  check_news_config
+  check_frontend_canary_release_ratios
+  check_animal_mirror_config
+  check_shelter_delay_config
+  check_adoption_retry_config
+  check_adoption_cb_config
+  check_notification_pool_config
+  check_security_config
+
+  print_line
+  ocp4_logout
+
+  ocp4_print_grade_footer
+}
+
+function deploy_mongodb {
+  local namespace="adoptapup"
+  local mongodb_user="developer"
+  local mongodb_password="developer"
+  local mongodb_database="adopt-a-pup"
+  local mongodb_admin_password="redhat"
+
+  ocp4_pad "Deploying MongoDB database"
+  if oc process -n ${namespace} -f /home/student/DO328/labs/comprehensive-review/mongodb-template.yaml -p MONGODB_USER=${mongodb_user} -p MONGODB_PASSWORD=${mongodb_password} -p MONGODB_DATABASE=${mongodb_database} -p MONGODB_ADMIN_PASSWORD=${mongodb_admin_password} | oc apply -n ${namespace} -f -; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+}
+
+function populate_mongodb {
+  local kubernetes_app_tag="mongodb"
+  local namespace="adoptapup"
+
+  mongo_pod=$(oc get pod -n ${namespace} -l app=${kubernetes_app_tag} -o jsonpath='{.items[0].metadata.name}')
+  mongo_container=${kubernetes_app_tag}
+
+  ocp4_pad "Populating animals in MongoDB database"
+  if oc exec -i "${mongo_pod}" -c "${mongo_container}" -- sh -c 'mongoimport --username=developer --password=developer --collection=animals --db=adopt-a-pup --drop' < /home/student/DO328/labs/comprehensive-review/mongo-data/animals.mongo; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  ocp4_pad "Populating shelters in MongoDB database"
+  if oc exec -i "${mongo_pod}" -c "${mongo_container}" -- sh -c 'mongoimport --username=developer --password=developer --collection=shelters --db=adopt-a-pup --drop' < /home/student/DO328/labs/comprehensive-review/mongo-data/shelters.mongo; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+}
+
+function ocp4_deploy_service {
+    local project="$1"
+    local files="$2"
+    local msg="$3"
+
+    ocp4_pad "${msg}"
+
+    for file in ${files//,/ }
+    do
+      if ! oc apply -n ${project} -f ${labs}/${this}/${file}
+      then
+        print_FAIL
+        return
+      fi
+    done
+
+    print_SUCCESS
+}
+
+
+function check_url {
+  local url="$1"
+  local pattern="$2"
+  local msg="$3"
+
+  ocp4_pad "${msg}"
+  if curl -s ${url} | grep "${pattern}"; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+}
+
+function check_news_config {
+
+  local news_se_host=$(oc get se news -n "${project}" -o jsonpath="{.spec.hosts[0]}")
+  local news_se_port=$(oc get se news -n "${project}" -o jsonpath="{.spec.ports[0].number}")
+  local news_se_protocol=$(oc get se news -n "${project}" -o jsonpath="{.spec.ports[0].protocol}")
+
+  local result="$news_se_protocol-$news_se_host-$news_se_port"
+
+  ocp4_pad "Verify service entry exists for news service"
+  if [ "$result" = "http-news-adoptapup-news.apps.ocp4.example.com-80" ]; then
+    print_PASS
+  else
+    print_FAIL
+    print_line
+    print_line "service entry for news service missing or incorrect!"
+  fi
+}
+
+function check_frontend_canary_release_ratios {
+
+  local v1_ratio=$(oc get vs frontend-vs -n "${project}" -o jsonpath="{.spec.http[0].route[0].weight}")
+  local v2_ratio=$(oc get vs frontend-vs -n "${project}" -o jsonpath="{.spec.http[0].route[1].weight}")
+
+  ocp4_pad "Verify frontend svc config for canary release"
+  if [ "$v1_ratio" = 80 ] && [ "$v2_ratio" = 20 ]; then
+    print_PASS
+  else
+    print_FAIL
+    print_line
+    print_line "frontend virtual svc config is missing or incorrect! ratio must be 80/20."
+  fi
+}
+
+function check_animal_mirror_config {
+
+  local mirror_host=$(oc get vs animal-vs -n "${project}" -o jsonpath="{.spec.http[0].mirror.host}")
+  local mirror_subset=$(oc get vs animal-vs -n "${project}" -o jsonpath="{.spec.http[0].mirror.subset}")
+  local dest_host=$(oc get vs animal-vs -n "${project}" -o jsonpath="{.spec.http[0].route[0].destination.host}")
+  local dest_subset=$(oc get vs animal-vs -n "${project}" -o jsonpath="{.spec.http[0].route[0].destination.subset}")
+
+  local result="$mirror_host-$mirror_subset-$dest_host-$dest_subset"
+
+  ocp4_pad "Verify animal virtual svc config for mirroring"
+  if [ "$result" = "animal-v2-animal-v1" ]; then
+    print_PASS
+  else
+    print_FAIL
+    print_line
+    print_line "animal virtual svc config for mirroring is missing or incorrect!"
+  fi
+}
+
+function check_shelter_delay_config {
+
+  local shelter_delay=$(oc get vs shelter-vs -n "${project}" -o jsonpath="{.spec.http[0].fault.delay.fixedDelay}")
+  local shelter_percent=$(oc get vs shelter-vs -n "${project}" -o jsonpath="{.spec.http[0].fault.delay.percentage.value}")
+
+  local result="$shelter_delay-$shelter_percent"
+
+  ocp4_pad "Verify delay config for shelter svc"
+  if [ "$result" = "3000ms-100" ] || [ "$result" = "3s-100" ]; then
+    print_PASS
+  else
+    print_FAIL
+    print_line
+    print_line "delay config for shelter service missing or incorrect!"
+  fi
+}
+
+function check_adoption_retry_config {
+  local retry_attempts=$(oc get vs adoption-vs -n "${project}" -o jsonpath="{.spec.http[0].retries.attempts}")
+  local retry_timeout=$(oc get vs adoption-vs -n "${project}" -o jsonpath="{.spec.http[0].retries.perTryTimeout}")
+  local retry_error=$(oc get vs adoption-vs -n "${project}" -o jsonpath="{.spec.http[0].retries.retryOn}")
+
+  local result="$retry_attempts-$retry_timeout-$retry_error"
+
+  ocp4_pad "Verify retry config for adoption svc"
+  if [ "$result" = "3-5s-5xx" ] || [ "$result" = "3-5000ms-5xx" ]; then
+    print_PASS
+  else
+    print_FAIL
+    print_line
+    print_line "retry config for adoption service missing or incorrect!"
+  fi
+}
+
+function check_adoption_cb_config {
+  local ejection_time=$(oc get dr adoption-dr -n "${project}" -o jsonpath="{.spec.trafficPolicy.outlierDetection.baseEjectionTime}")
+  local consecutive_errors=$(oc get dr adoption-dr -n "${project}" -o jsonpath="{.spec.trafficPolicy.outlierDetection.consecutiveErrors}")
+  local interval=$(oc get dr adoption-dr -n "${project}" -o jsonpath="{.spec.trafficPolicy.outlierDetection.interval}")
+  local flag1=false
+  local flag2=false
+  local flag3=false
+
+  if [ "$ejection_time" = "1m" ] || [ "$ejection_time" = "60s" ] || [ "$ejection_time" = "60000ms" ]; then
+    flag1=true
+  fi
+
+  if [ "$consecutive_errors" = "3" ]; then
+    flag2=true
+  fi
+
+  if [ "$interval" = "10s" ] || [ "$interval" = "10000ms" ]; then
+    flag3=true
+  fi
+
+  ocp4_pad "Verify circuit breaker config for adoption svc"
+  if [ "$flag1" = true ] && [ "$flag2" = true ] && [ "$flag3" = true ]; then
+    print_PASS
+  else
+    print_FAIL
+    print_line
+    print_line "circuit breaker config for adoption service missing or incorrect!"
+  fi
+}
+
+function check_notification_pool_config {
+  local max_connections=$(oc get dr notification-dr -n "${project}" -o jsonpath="{.spec.trafficPolicy.connectionPool.tcp.maxConnections}")
+  local max_requests=$(oc get dr notification-dr -n "${project}" -o jsonpath="{.spec.trafficPolicy.connectionPool.http.maxRequestsPerConnection}")
+
+  local result="$max_connections-$max_requests"
+
+  ocp4_pad "Verify notification pool for notification svc"
+  if [ "$result" = "5-1" ]; then
+    print_PASS
+  else
+    print_FAIL
+    print_line
+    print_line "connection pool config for notification service missing or incorrect!"
+  fi
+}
+
+function check_security_config {
+  local animalsa=$(oc get sa animal-sa -n "${project}" -o name)
+  local sheltersa=$(oc get sa shelter-sa -n "${project}" -o name)
+
+  local sa_result="$animalsa-$sheltersa"
+
+  ocp4_pad "Verify if service accounts exist for animal and shelter svc"
+  if [ "$sa_result" = "serviceaccount/animal-sa-serviceaccount/shelter-sa" ]; then
+    print_PASS
+  else
+    print_FAIL
+    print_line
+    print_line "service accounts for animal and shelter svc missing or incorrect!"
+  fi
+
+  local animal_deployment=$(oc get deployment animal-v1 -n "${project}" -o jsonpath="{.spec.template.spec.serviceAccount}")
+  local shelter_deployment=$(oc get deployment shelter -n "${project}" -o jsonpath="{.spec.template.spec.serviceAccount}")
+
+  local deploy_result="$animal_deployment-$shelter_deployment"
+
+  ocp4_pad "Verify svc accounts in deployment resource"
+  if [ "$deploy_result" = "animal-sa-shelter-sa" ]; then
+    print_PASS
+  else
+    print_FAIL
+    print_line
+    print_line "service accounts in deployment for animal and shelter svc missing or incorrect!"
+  fi
+
+  local mongo_tls=$(oc get dr mongodb-dr -n "${project}" -o jsonpath="{.spec.trafficPolicy.tls.mode}")
+  local animal_tls=$(oc get dr animal-dr -n "${project}" -o jsonpath="{.spec.trafficPolicy.tls.mode}")
+  local shelter_tls=$(oc get dr shelter-dr -n "${project}" -o jsonpath="{.spec.trafficPolicy.tls.mode}")
+
+  ocp4_pad "Verify mutual tls config"
+  if [ "$mongo_tls" = "ISTIO_MUTUAL" ] && [ "$animal_tls" = "ISTIO_MUTUAL" ] && [ "$shelter_tls" = "ISTIO_MUTUAL" ]; then
+    print_PASS
+  else
+    print_FAIL
+    print_line
+    print_line "mutual tls configuration for mongodb, animal and shelter svc missing or incorrect!"
+  fi
+
+  local mongo_selector=$(oc get AuthorizationPolicy mongodb-auth-policy -n "${project}" -o jsonpath="{.spec.selector.matchLabels.app}")
+  # sort inline; first make each word be on a new line, then sort, finally turn it back into a one line
+  local policies=$(oc get AuthorizationPolicy mongodb-auth-policy -n "${project}" -o jsonpath="{.spec.rules..from..source..principals[*]}" | xargs -n1 | sort | xargs)
+
+  ocp4_pad "Verify authorization policy config"
+  if [ "$mongo_selector" = "mongodb" ] && [ "$policies" = "cluster.local/ns/adoptapup/sa/animal-sa cluster.local/ns/adoptapup/sa/shelter-sa" ]; then
+    print_PASS
+  else
+    print_FAIL
+    print_line
+    print_line "authorization policy config missing or incorrect!"
+  fi
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

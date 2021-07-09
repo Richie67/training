@@ -1,0 +1,40 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: observe-metrics-vs
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - observe-metrics-gateway
+  http:
+  - match:
+    - uri:
+        exact: /spl50
+    rewrite:
+      uri: /spl50
+    route:
+    - destination:
+        host: product
+        port:
+          number: 8080
+  - match:
+    - uri:
+        exact: /order
+    rewrite:
+      uri: /order
+    route:
+    - destination:
+        host: order
+        port:
+          number: 8080
+  - match:
+    - uri:
+        exact: /rating
+    rewrite:
+      uri: /rating
+    route:
+    - destination:
+        host: order
+        port:
+          number: 8080

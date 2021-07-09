@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: animal
+    version: v2
+  name: animal-v2
+spec:
+  selector:
+    matchLabels:
+      app: animal
+      version: v2
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: animal
+        version: v2
+      annotations:
+        sidecar.istio.io/inject: "true"
+    spec:
+      containers:
+        - name: animal-v2
+          image: quay.io/redhattraining/ossm-animal-service:2.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+---

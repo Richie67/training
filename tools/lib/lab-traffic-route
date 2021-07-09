@@ -1,0 +1,73 @@
+#!/usr/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-traffic-route - lab script used to route traffic to a service deployed in OpenShift Service Mesh
+#
+# SYNOPSIS
+#     lab-traffic-route {start|finish}
+#
+#        start - verify prerequisites for routing traffic to a service deployed in OpenShift Service Mesh
+#        finish - removes the exposed service and related resources from OpenShift Service Mesh
+#
+# DESCRIPTION
+#     This script is used to start or conclude the chapter 4 section 4 guided exercise.
+#
+# CHANGELOG
+#   * Fri Apr 17 2020 Pablo Solar Vilariño <psolarvi@redhat.com>
+#   - Initial commit
+#
+# REFERENCES
+#     Applications
+#         https://github.com/RedHatTraining/DO328-apps/tree/master/maven-simplest
+#         https://github.com/RedHatTraining/DO328-apps/tree/master/maven-simplest-v2
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin
+
+# Initialize and set some variables
+run_as_root='true'
+
+# Required by the do328 shlib
+this='traffic-route'
+title='GE: Routing Traffic Based on Request Headers'
+
+istio_project='istio-system'
+istio_deployment_name='basic-install'
+
+declare -a valid_commands=(start finish)
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  ocp4_check_sm_installed ${istio_project} ${istio_deployment_name}
+  ocp4_grab_lab_files
+
+  ocp4_print_setup_header
+  ocp4_print_setup_footer
+
+}
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_cleanup_lab_files
+  ocp4_login_as_admin
+  ocp4_sm_clean_smmr
+  ocp4_delete_project 'headers'
+  ocp4_logout
+
+  ocp4_print_cleanup_footer
+
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

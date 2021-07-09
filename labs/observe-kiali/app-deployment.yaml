@@ -1,0 +1,314 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: czech
+    version: v1
+  name: czech
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: czech
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: czech
+        version: v1
+      annotations:
+        sidecar.istio.io/inject: "true"
+    spec:
+      containers:
+      - name: czech
+        image: quay.io/redhattraining/ossm-czech:1.0
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        - containerPort: 8778
+          name: jolokia
+          protocol: TCP
+        - containerPort: 9779
+          name: prometheus
+          protocol: TCP
+        livenessProbe:
+          exec:
+            command:
+            - curl
+            - localhost:8080/health
+          initialDelaySeconds: 3
+          periodSeconds: 5
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - curl
+            - localhost:8080/health
+          initialDelaySeconds: 3
+          periodSeconds: 5
+          timeoutSeconds: 5
+        securityContext:
+          privileged: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: czech
+  labels:
+    app: czech
+spec:
+  ports:
+  - name: http
+    port: 8080
+  selector:
+    app: czech
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: spanish
+    version: v1
+  name: spanish
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spanish
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: spanish
+        version: v1
+      annotations:
+        sidecar.istio.io/inject: "true"
+    spec:
+      containers:
+      - name: spanish
+        image: quay.io/redhattraining/ossm-spanish:1.0
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        - containerPort: 8778
+          name: jolokia
+          protocol: TCP
+        - containerPort: 9779
+          name: prometheus
+          protocol: TCP
+        livenessProbe:
+          exec:
+            command:
+            - curl
+            - localhost:8080/health
+          initialDelaySeconds: 3
+          periodSeconds: 5
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - curl
+            - localhost:8080/health
+          initialDelaySeconds: 3
+          periodSeconds: 5
+          timeoutSeconds: 5
+        securityContext:
+          privileged: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spanish
+  labels:
+    app: spanish
+spec:
+  ports:
+  - name: http
+    port: 8080
+  selector:
+    app: spanish
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: greet-api
+    version: v1
+  name: greet-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: greet-api
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: greet-api
+        version: v1
+      annotations:
+        sidecar.istio.io/inject: "true"
+    spec:
+      containers:
+      - name: greet-api
+        image: quay.io/redhattraining/ossm-greet-api:1.0
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        - containerPort: 8778
+          name: jolokia
+          protocol: TCP
+        - containerPort: 9779
+          name: prometheus
+          protocol: TCP
+        livenessProbe:
+          exec:
+            command:
+            - curl
+            - localhost:8080/health
+          initialDelaySeconds: 3
+          periodSeconds: 5
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - curl
+            - localhost:8080/health
+          initialDelaySeconds: 3
+          periodSeconds: 5
+          timeoutSeconds: 5
+        securityContext:
+          privileged: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: greet-api
+  labels:
+    app: greet-api
+spec:
+  ports:
+  - name: http
+    port: 8080
+  selector:
+    app: greet-api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: english
+    version: v1
+  name: english-v1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: english
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: english
+        version: v1
+      annotations:
+        sidecar.istio.io/inject: "true"
+    spec:
+      containers:
+      - name: english-v1
+        image: quay.io/redhattraining/ossm-english:1.0
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        - containerPort: 8778
+          name: jolokia
+          protocol: TCP
+        - containerPort: 9779
+          name: prometheus
+          protocol: TCP
+        livenessProbe:
+          exec:
+            command:
+            - curl
+            - localhost:8080/health
+          initialDelaySeconds: 3
+          periodSeconds: 5
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - curl
+            - localhost:8080/health
+          initialDelaySeconds: 3
+          periodSeconds: 5
+          timeoutSeconds: 5
+        securityContext:
+          privileged: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: english
+  labels:
+    app: english
+spec:
+  ports:
+  - name: http
+    port: 8080
+  selector:
+    app: english
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: greet-api-gateway
+spec:
+  selector:
+    istio: ingressgateway # use istio default controller
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "*"
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: greet-api-vs
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - greet-api-gateway
+  http:
+  - match:
+    - uri:
+        exact: /greet
+    rewrite:
+      uri: /
+    route:
+    - destination:
+        host: greet-api
+        port:
+          number: 8080
+  - match:
+    - uri:
+        exact: /chained
+    rewrite:
+      uri: /chained
+    route:
+    - destination:
+        host: greet-api
+        port:
+          number: 8080
+---

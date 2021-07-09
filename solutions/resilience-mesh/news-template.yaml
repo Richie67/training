@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: news-feed
+  annotations:
+    description: "News feed sample application for Red Hat Training"
+objects:
+  - kind: Deployment
+    apiVersion: apps/v1
+    metadata:
+      name: news-ok
+    spec:
+      selector:
+        matchLabels:
+          app: news
+      replicas: 1
+      template:
+        metadata:
+          labels:
+            app: news
+        spec:
+          containers:
+            - name: news
+              image: quay.io/redhattraining/ossm-python-flask-gossip:2.0
+              imagePullPolicy: Always
+              ports:
+                - containerPort: 5000
+  - kind: Deployment
+    apiVersion: apps/v1
+    metadata:
+      name: news-error
+    spec:
+      selector:
+        matchLabels:
+          app: news
+      replicas: 1
+      template:
+        metadata:
+          labels:
+            app: news
+        spec:
+          containers:
+            - name: news
+              image: quay.io/redhattraining/ossm-python-flask-gossip:2.0
+              imagePullPolicy: Always
+              ports:
+                - containerPort: 5000
+              env:
+                - name: DATA_FOLDER
+                  value: ${DATA_FOLDER}
+                - name: ERROR_RESPONSE
+                  value: ${ERROR_RESPONSE}
+  - kind: Service
+    apiVersion: v1
+    metadata:
+      name: news
+    spec:
+      ports:
+        - port: 5000
+          protocol: TCP
+          targetPort: 5000
+      selector:
+        app: news
+  - kind: Route
+    apiVersion: route.openshift.io/v1
+    metadata:
+      name: news
+    spec:
+      to:
+        kind: Service
+        name: news
+      port:
+        targetPort: 5000
+parameters:
+  - name: DATA_FOLDER
+    description: "Folder that stores the news"
+    required: false
+    value: ""
+  - name: ERROR_RESPONSE
+    description: "Error response on issues finding the news file"
+    required: false
+    value: ""

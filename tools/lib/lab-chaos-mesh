@@ -1,0 +1,119 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-chaos-mesh
+#
+# SYNOPSIS
+#     lab-chaos-mesh {start|finish|grade}
+#
+#        start - Deploy the exchange application into OpenShift Service Mesh
+#        finish - Remove application from OpenShift Service Mesh
+#        grade - Grade the lab steps
+#
+# DESCRIPTION
+#     This script is used to start or conclude the chapter 6 end-of-chapter lab.
+#
+# CHANGELOG
+#   * Wed Apr 22 2020 Marek Czernek <mczernek@redhat.com>
+#   - Initial commit
+#
+# REFERENCES
+#     Applications
+#         https://github.com/RedHatTraining/DO328-apps/tree/master/exchange-application
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin
+
+# Initialize and set some variables
+run_as_root='true'
+
+# Required by the do328 shlib
+this='chaos-mesh'
+title='Lab: Testing Service Resilience with Chaos Testing'
+
+istio_project='istio-system'
+istio_route='istio-ingressgateway'
+
+declare -a valid_commands=(start finish grade)
+
+function lab_start {
+
+  ISTIO_INGRESS_GW=''
+
+  ocp4_print_prereq_header
+  ocp4_is_cluster_up
+  ocp4_is_sm_installed
+  ocp4_grab_lab_files
+  ocp4_login_as_developer
+  ocp4_get_route_host_into ISTIO_INGRESS_GW "${istio_project}" "${istio_route}"
+
+  ocp4_print_setup_header
+  ocp4_new_project "${this}"
+  ocp4_sm_add_projects_to_smmr "${this}"
+  ocp4_print_smmr_state_for_project "${this}"
+  ocp4_wait_operator_ready "${this}"
+
+  ocp4_process_template_solution "${this}" "exchange-template.yaml" "INGRESS_GW=${ISTIO_INGRESS_GW}"
+
+  ocp4_check_exchange_app_pod_replicas "${this}"
+
+  ocp4_print_setup_footer
+
+}
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_cleanup_lab_files
+  ocp4_login_as_admin
+  ocp4_sm_clean_smmr
+  ocp4_delete_project "${this}"
+  ocp4_logout
+
+  ocp4_print_cleanup_footer
+}
+
+function lab_grade {
+  ocp4_print_grade_header
+
+  ocp4_login_as_admin
+
+  print_line
+  print_line ' Verifying LAB solution:'
+
+  check_exchange_vservice_fault "delay.fixedDelay" "10s" "network delay"
+  check_exchange_vservice_fault "delay.percentage.value" "20" "network delay percentage"
+  check_exchange_vservice_fault "abort.httpStatus" "500" "HTTP fault status code"
+  check_exchange_vservice_fault "abort.percentage.value" "30" "HTTP fault percentage"
+
+  print_line
+  ocp4_logout
+
+  ocp4_print_grade_footer
+}
+
+function check_exchange_vservice_fault {
+  local json_path="$1"
+  local value="$2"
+  local component="$3"
+
+  ocp4_pad "Checking ${component} ($value)"
+  local result="$(oc get vs exchange-vservice -n ${this} -o jsonpath={.spec.http[0].fault.${json_path}})"
+  echo "DEBUG: Expected: ${value}; GOT: ${result}"
+  if [[ "$result" == "${value}" ]]; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

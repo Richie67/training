@@ -1,0 +1,87 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-chaos-delay
+#
+# SYNOPSIS
+#     lab chaos-delay {start|finish}
+#
+# DESCRIPTION
+#     This script is used to start, conclude, grade, or solve the chapter 6 section 4 guided 
+#     exercise.
+#
+# CHANGELOG
+#   * Wed May 15 2020 Eduardo Ramirez <eramirez@redhat.com>
+#   - Initial commit
+#
+# REFERENCES
+#     Applications
+#         https://github.com/RedHatTraining/DO328-apps/tree/master/customer/quarkus
+#         https://github.com/RedHatTraining/DO328-apps/tree/master/preference/quarkus
+#         https://github.com/RedHatTraining/DO328-apps/tree/master/recommendation/quarkus
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin
+
+# Initialize and set some variables
+run_as_root='true'
+
+# Required by the do328 shlib
+this='chaos-delay'
+title='GE: Throwing HTTP Errors'
+project='chaos-delay'
+
+declare -a valid_commands=(start finish)
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+  ocp4_is_cluster_up
+  ocp4_check_sm_installed
+
+  ocp4_print_setup_header
+  ocp4_login_as_developer
+  ocp4_grab_lab_files
+ 
+  ocp4_new_project "${project}"
+
+  ocp4_sm_add_projects_to_smmr "${project}"
+
+  ocp4_print_smmr_state_for_project "${project}"
+
+  ocp4_wait_operator_ready "${project}"
+
+  ocp4_deploy_lab_files $this "app-deployment.yml"
+
+  ocp4_check_recommendation_app_pod_replicas $this
+
+  ocp4_print_setup_footer
+
+}
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_pad 'Cleaning up the Workstation VM'
+  ocp4_delete_lab_files_if_present
+  print_SUCCESS
+
+  ocp4_login_as_admin
+
+  ocp4_delete_project "${project}"
+
+  ocp4_sm_clean_smmr
+
+  ocp4_print_cleanup_footer
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

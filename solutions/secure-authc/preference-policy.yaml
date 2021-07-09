@@ -1,0 +1,16 @@
+apiVersion: "security.istio.io/v1beta1"
+kind: "AuthorizationPolicy"
+metadata:
+  name: "get-preference"
+spec:
+  selector:
+    matchLabels:
+      app: preference
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/secure-authc/sa/customer-sa"]
+    to:
+    - operation:
+        methods: ["GET"]
+        ports: ["8080"]

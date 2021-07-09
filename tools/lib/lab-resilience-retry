@@ -1,0 +1,78 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-resilience-timeout - lab script used to explore resilience with retries in Red Hat OpenShift Service Mesh
+#
+# SYNOPSIS
+#     lab-resilience-retry {start|finish}
+#
+#        start - verify prerequisites for managing retries with Red Hat OpenShift Service Mesh
+#        finish - removes the exposed services and related resources from OpenShift Service Mesh
+#
+# DESCRIPTION
+#     This script is used to start or conclude the chapter 7 section 5 lab.
+#
+# CHANGELOG
+#   * Thu May 21 2020 Marek Czernek <mczernek@redhat.com>
+#   - Initial commit
+#
+# REFERENCES
+#     Applications
+#         https://github.com/RedHatTraining/DO328-apps/tree/master/customer
+#         https://github.com/RedHatTraining/DO328-apps/tree/master/preference
+#         https://github.com/RedHatTraining/DO328-apps/tree/master/recommendation
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin
+
+# Initialize and set some variables
+run_as_root='true'
+
+# Required by the do328 shlib
+this='resilience-retry'
+title='Lab: Configuring Retry'
+
+declare -a valid_commands=(start finish)
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  ocp4_check_sm_installed
+  ocp4_grab_lab_files
+  ocp4_login_as_developer
+
+  ocp4_new_project "${this}"
+  ocp4_sm_add_projects_to_smmr "${this}"
+  ocp4_print_smmr_state_for_project "${this}"
+  ocp4_wait_operator_ready "${this}"
+  ocp4_deploy_solutions "${this}" "application.yml"
+
+  ocp4_check_recommendation_app_pod_replicas "${this}"
+
+  ocp4_print_setup_header
+  ocp4_print_setup_footer
+}
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_cleanup_lab_files
+  ocp4_login_as_admin
+  ocp4_sm_clean_smmr
+  ocp4_delete_project "${this}"
+  ocp4_logout
+
+  ocp4_print_cleanup_footer
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

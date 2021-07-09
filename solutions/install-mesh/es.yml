@@ -1,0 +1,11 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: elasticsearch-operator
+  namespace: openshift-operators
+spec:
+  name: elasticsearch-operator
+  source: ossm-catalog
+  sourceNamespace: openshift-marketplace
+  channel: "4.4"
+  installPlanApproval: Automatic

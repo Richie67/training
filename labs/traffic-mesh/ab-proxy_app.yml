@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: ap-proxy-app
+  annotations:
+    description: "AB proxy to use with the financial sample application for Red Hat Training"
+objects:
+  - apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: ab-proxy
+    spec:
+      selector:
+        matchLabels:
+          app: ab-proxy
+      replicas: 1
+      template:
+        metadata:
+          labels:
+            app: ab-proxy
+        spec:
+          containers:
+            - name: ab-proxy
+              image: quay.io/redhattraining/ossm-ab-proxy:1.0
+              imagePullPolicy: Always
+              ports:
+                - containerPort: 5000
+              env:
+                - name: INGRESS_GATEWAY
+                  value: http://${INGRESS_GW}/
+  - kind: Service
+    apiVersion: v1
+    metadata:
+      labels:
+        app: ab-proxy
+      name: ab-proxy
+    spec:
+      ports:
+      - port: 5000
+        protocol: TCP
+        targetPort: 5000
+      selector:
+        app: ab-proxy
+  - kind: Route
+    apiVersion: route.openshift.io/v1
+    metadata:
+      name: ab-proxy
+      labels:
+        app: ab-proxy
+    spec:
+      to:
+        kind: Service
+        name: ab-proxy
+      port:
+        targetPort: 5000
+parameters:
+  - name: INGRESS_GW
+    description: "The address of the Istio Ingress Gateway, to be used for the external exchange service"
+    required: true
+

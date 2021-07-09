@@ -1,0 +1,22 @@
+{
+  "name": "servicea",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "Red Hat Training",
+  "license": "ASL",
+  "dependencies": {
+    "axios": "^0.19.2",
+    "dotenv": "^8.2.0",
+    "fastify": "^2.13.1",
+    "jaeger-client": "^3.17.2",
+    "opentracing": "^0.14.4",
+    "pino": "^6.2.0"
+  },
+  "devDependencies": {
+    "pino-pretty": "^4.0.0"
+  }
+}

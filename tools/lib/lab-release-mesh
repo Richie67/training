@@ -1,0 +1,167 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-release-mesh
+#
+# SYNOPSIS
+#     lab-release-mesh {start|finish|grade}
+#
+#        start - Deploy starter application into OpenShift Service Mesh
+#        finish - Remove application project from OpenShift Service Mesh
+#        grade - Grade the lab
+#
+# DESCRIPTION
+#     This script is used to start/finish/grade the chapter 5 section 5 lab.
+#
+# CHANGELOG
+#   * Wed May 19 2020 Ravi Srinivasan <ravis@redhat.com>
+#   - Initial commit
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin
+
+# Initialize and set some variables
+run_as_root='true'
+
+# Required by the do328 shlib
+this='release-mesh'
+title='Lab: Releasing Applications with OpenShift Service Mesh'
+
+istio_project='istio-system'
+istio_deployment_name='basic-install'
+istio_route='istio-ingressgateway'
+
+declare -a valid_commands=(start finish grade)
+
+function lab_start {
+
+  ocp4_print_prereq_header
+  ocp4_is_cluster_up
+  ocp4_check_sm_installed ${istio_project} ${istio_deployment_name}
+
+  ocp4_print_setup_header
+  ocp4_grab_lab_files
+  ocp4_login_as_developer
+  ocp4_new_project "${this}"
+  ocp4_sm_add_projects_to_smmr "${this}"
+  ocp4_print_smmr_state_for_project "${this}"
+  ocp4_wait_operator_ready "${this}"
+
+  ocp4_deploy_lab_files "${this}" "app-deployment.yaml"
+
+  ocp4_check_payment_app_pod_replicas "${this}"
+
+  ocp4_print_setup_footer
+
+}
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_cleanup_lab_files
+  ocp4_login_as_admin
+  ocp4_sm_clean_smmr
+  ocp4_delete_project "${this}"
+  ocp4_logout
+
+  ocp4_print_cleanup_footer
+
+}
+
+function lab_grade {
+  ocp4_print_grade_header
+
+  ocp4_login_as_admin
+
+  print_line
+  print_line ' Verifying Lab'
+
+  ISTIO_INGRESS_GW=''
+  ocp4_get_route_host_into ISTIO_INGRESS_GW "${istio_project}" "${istio_route}"
+
+  ocp4_pad "Check if project release-mesh exists"
+  if oc get project "${this}" -o name
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_pad "Check if payment service v1 is up and running"
+  print_pass_fail_service_running 'release-mesh' 'app=payment,version=v1'
+
+  ocp4_pad "Check if payment service v2 is up and running"
+  print_pass_fail_service_running 'release-mesh' 'app=payment,version=v2'
+
+  ocp4_pad "Check if gateway service v1 is up and running"
+  print_pass_fail_service_running 'release-mesh' 'app=gateway,version=v1'
+
+  ocp4_pad "Check if gateway service v2 is up and running"
+  print_pass_fail_service_running 'release-mesh' 'app=gateway,version=v2'
+
+  check_live_frontend "${ISTIO_INGRESS_GW}"
+
+  check_canary_release_ratios
+  check_mirror_config
+
+  print_line
+  ocp4_logout
+
+  ocp4_print_grade_footer
+}
+
+function check_live_frontend {
+  local frontend_url="$1"
+
+  ocp4_pad "Checking that the payment svc is accessible"
+  if curl -s ${frontend_url}/pay/10 | grep "OK"; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+}
+
+function check_canary_release_ratios {
+
+  local v1_ratio=$(oc get vs payment-vs -n release-mesh -o jsonpath="{.spec.http[0].route[0].weight}")
+  local v2_ratio=$(oc get vs payment-vs -n release-mesh -o jsonpath="{.spec.http[0].route[1].weight}")
+
+  ocp4_pad "Verify payment virtual svc config for canary release"
+  if [ "$v1_ratio" = 90 ] && [ "$v2_ratio" = 10 ]; then
+    print_PASS
+  else
+    print_FAIL
+    print_line
+    print_line "payment virtual service config is incorrect! ratio must be 90/10."
+  fi
+}
+
+function check_mirror_config {
+
+  local mirror_host=$(oc get vs gateway-vs -n release-mesh -o jsonpath="{.spec.http[0].mirror.host}")
+  local mirror_subset=$(oc get vs gateway-vs -n release-mesh -o jsonpath="{.spec.http[0].mirror.subset}")
+  local dest_host=$(oc get vs gateway-vs -n release-mesh -o jsonpath="{.spec.http[0].route[0].destination.host}")
+  local dest_subset=$(oc get vs gateway-vs -n release-mesh -o jsonpath="{.spec.http[0].route[0].destination.subset}")
+
+  local result="$mirror_host-$mirror_subset-$dest_host-$dest_subset"
+
+  ocp4_pad "Verify gateway virtual svc config for mirroring"
+  if [ "$result" = "gateway-v2-gateway-v1" ]; then
+    print_PASS
+  else
+    print_FAIL
+    print_line
+    print_line "gateway virtual svc config for mirroring is incorrect!"
+  fi
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

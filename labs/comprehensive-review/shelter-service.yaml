@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shelter
+spec:
+  selector:
+    matchLabels:
+      app: shelter
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: shelter
+      annotations:
+        sidecar.istio.io/inject: "true"
+    spec:
+      containers:
+        - name: shelter
+          image: quay.io/redhattraining/ossm-shelter-service:1.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: shelter
+  name: shelter
+spec:
+  ports:
+    - port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app: shelter
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: shelter-vs
+spec:
+  hosts:
+    - "*"
+  gateways:
+    - adoptapup-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /shelters
+      route:
+        - destination:
+            host: shelter
+            port:
+              number: 8080

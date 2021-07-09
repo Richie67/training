@@ -1,0 +1,163 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-uninstall-mesh - lab script used for removing deployment of OpenShift Service Mesh
+#
+# SYNOPSIS
+#     lab-install-mesh {start}
+#
+#        start - remove current OpenShift Service Mesh 
+#
+# DESCRIPTION
+#     This script is used to remove OpenShift Service Mesh from an OpenShift cluster.
+#
+# CHANGELOG
+#   * Mon Mar 30 2020 Marek Czernek <mczernek@redhat.com>
+#   - Initial commit
+#
+# REFERENCES
+#     Applications
+#         This lab does not use any applications
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin
+
+# Initialize and set some variables
+run_as_root='true'
+
+# Required by the do328 shlib
+this='uninstall-mesh'
+title='Uninstalling Service Mesh'
+
+istio_project='istio-system'
+
+
+declare -a valid_commands=(start)
+
+
+function lab_start {
+
+  print_header "Removing OpenShift Service Mesh from cluster"
+  #prereq check
+  ocp4_is_cluster_up
+
+  remove_smcp_if_exists
+  remove_istio_system_if_exists
+  remove_operator_subscriptions
+  remove_operator_clusterserviceversion
+  cleanup_cluster
+
+  ocp4_print_setup_footer
+}
+
+function remove_smcp_if_exists {
+    print_header 'Removing Istio Service Mesh Control Plane'
+    local SMCPS="$(oc get servicemeshcontrolplanes --all-namespaces -o jsonpath='{.items[*].metadata.name}')"
+    if [[ ! -z ${SMCPS} ]]; then
+      # Found an smcp
+      for SMCP_NAME in ${SMCPS}; do
+        local SMCP_NS=$(oc get servicemeshcontrolplanes --all-namespaces -o jsonpath="{.items[?(@.metadata.name==\"${SMCP_NAME}\")].metadata.namespace}")
+        ocp4_pad "Removing ${SMCP_NAME} in project ${SMCP_NS}."
+        if oc delete servicemeshcontrolplanes -n "${SMCP_NS}" "${SMCP_NAME}"
+        then
+          print_SUCCESS
+        else
+          print_FAIL
+          print_line
+          fatal 9 "Could not delete servicemeshcontrolplanes ${SMCP_NS} in project ${SMCP_NAME}. Please delete it manually"
+        fi
+      done
+    else
+      ocp4_pad 'No Service Mesh Control Plane found; skipping'
+      print_SUCCESS
+    fi
+}
+
+function cleanup_cluster {
+  print_header 'Cleaning up any remaining Istio resources'
+  ocp4_pad 'Cleaning all Istio and Maistra CRDs'
+
+  local operator_project="openshift-operators"
+  #These resources might be deleted by operator cleanup, but might not be
+  oc delete --ignore-not-found=true "validatingwebhookconfiguration/${operator_project}.servicemesh-resources.maistra.io"
+  oc delete --ignore-not-found=true "mutatingwebhoookconfigurations/${operator_project}.servicemesh-resources.maistra.io"
+  oc delete --ignore-not-found=true -n "${operator_project}" daemonset/istio-node
+  oc delete --ignore-not-found=true clusterrole/istio-admin clusterrole/istio-cni clusterrolebinding/istio-cni
+
+  # CRDs are not deleted by operator cleanup
+  oc get crds -o name | grep '.*\.istio\.io' | xargs -r -n 1 oc delete
+  oc get crds -o name | grep '.*\.maistra\.io' | xargs -r -n 1 oc delete
+  print_SUCCESS
+}
+
+function remove_operator_subscriptions {
+  print_header "Removing operator subscriptions"
+  # Get all operator subs that the user subscribed to
+  # this will also remove community or other incorrect subscriptions
+  local CURRENT_OPERATORS="$(oc get subscription -n openshift-operators -o name)"
+  for OPERATOR_SUBSCRIPTION in ${CURRENT_OPERATORS}
+  do
+    ocp4_pad "Removing ${OPERATOR_SUBSCRIPTION}"
+    if oc -n openshift-operators delete "${OPERATOR_SUBSCRIPTION}"
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+      print_line
+      fatal 10 "Could not delete ${OPERATOR_SUBSCRIPTION} from the openshift-operator project. Please delete it manually."
+    fi
+  done
+
+  if [[ -z "${CURRENT_OPERATORS}" ]]; then
+    ocp4_pad "No operator subscriptions found; skipping"
+    print_SUCCESS
+  fi
+  ocp4_clean_operator_test_plans
+}
+
+function remove_operator_clusterserviceversion {
+  print_header "Removing clusterserviceversion objects"
+  print_line " This may take a while"
+
+  local CSVS="$(oc get -n default clusterserviceversions -o jsonpath='{.items[*].metadata.name}')"
+  local PROJECTS="$(oc get projects -o jsonpath='{.items[*].metadata.name}')"
+
+  # if "${CSVS}" is non-empty
+  if [[ ! -z "${CSVS}" ]]; then
+    ocp4_pad "Cleaning all projects"
+    for csv in ${CSVS}; do
+      for project in ${PROJECTS}; do
+        if ! oc delete -n "${project}" --ignore-not-found=true clusterserviceversions "${csv}"; then
+          print_FAIL
+          print_line
+          fatal 11 "Could not delete clusterserviceversions ${csv} in project ${project}. Please delete them manually."
+        fi
+      done
+    done
+    print_SUCCESS
+  else
+    ocp4_pad "No clusterserviceversion objects found; skipping"
+    print_SUCCESS
+  fi
+}
+
+function remove_istio_system_if_exists {
+  print_header "Removing istio system project"
+  local PROJECT="$(oc get projects -o jsonpath='{.items[?(@.metadata.name=="istio-system")].metadata.name}')"
+
+  if [[ ! -z $PROJECT ]]; then
+    ocp4_delete_project $PROJECT
+  else
+    ocp4_pad "Project istio-system not found; skipping"
+    print_SUCCESS
+  fi
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

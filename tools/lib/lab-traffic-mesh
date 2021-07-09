@@ -1,0 +1,258 @@
+#!/usr/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-traffic-mesh - lab script used to manage and route traffic with Red Hat OpenShift Service Mesh
+#
+# SYNOPSIS
+#     lab-traffic-mesh {start|grade|finish}
+#
+#        start - verify prerequisites for managing and route traffic with Red Hat OpenShift Service Mesh
+#        grade - perform evaluation steps on the deployed application
+#        finish - removes the exposed services and related resources from OpenShift Service Mesh
+#
+# DESCRIPTION
+#     This script is used to start, grade or conclude the chapter 4 lab.
+#
+# CHANGELOG
+#   * Thu Apr 30 2020 Pablo Solar Vilariño <psolarvi@redhat.com>
+#   - Grading
+#   * Thu Apr 23 2020 Pablo Solar Vilariño <psolarvi@redhat.com>
+#   - Initial commit
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin
+
+# Initialize and set some variables
+run_as_root='true'
+
+# Required by the do328 shlib
+this='traffic-mesh'
+title='Lab: Controlling Service Traffic'
+
+istio_project='istio-system'
+istio_deployment_name='basic-install'
+
+declare -a valid_commands=(start grade finish)
+
+function lab_start {
+
+  ISTIO_INGRESS_GW=''
+  NEWS_URL=''
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  ocp4_check_sm_installed
+  ocp4_grab_lab_files
+
+  ocp4_login_as_developer
+
+  ocp4_get_route_host_into ISTIO_INGRESS_GW "${istio_project}" "istio-ingressgateway"
+
+  # deploy external app
+  ocp4_new_project "${this}-news"
+  ocp4_deploy_solutions "${this}-news" "news_app.yml"
+  ocp4_get_route_url_into NEWS_URL "${this}-news" "news"
+
+  # deploy proxy app
+  ocp4_new_project "${this}-proxy"
+  ocp4_process_template_solution "${this}-proxy" "ab-proxy_app.yml" "INGRESS_GW=${ISTIO_INGRESS_GW}"
+
+  # deploy course app
+  ocp4_new_project "${this}"
+  ocp4_sm_add_projects_to_smmr "${this}"
+  ocp4_print_smmr_state_for_project "${this}"
+  ocp4_wait_operator_ready "${this}" "servicemeshoperator"
+  ocp4_process_template_solution "${this}" "financial_app.yml" "INGRESS_GW=${ISTIO_INGRESS_GW}" "NEWS_ENDPOINT=${NEWS_URL}"
+
+  ocp4_check_exchange_app_pod_replicas $this
+
+  ocp4_print_setup_header
+  ocp4_print_setup_footer
+}
+
+function lab_grade {
+
+  ocp4_print_grade_header
+
+  ocp4_login_as_admin
+
+  print_line
+  print_line ' Verifying LAB solution:'
+
+  verify_ingress_gateway
+  verify_frontend_beta_deployment
+  verify_frontend_destination_rule
+  verify_frontend_virtual_service
+  verify_egress_policy
+  verify_egress_service_entry
+
+  print_line
+  ocp4_logout
+
+  ocp4_print_grade_footer
+}
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_cleanup_lab_files
+  ocp4_login_as_admin
+  ocp4_change_egress_config_to ""
+  ocp4_sm_clean_smmr
+
+  ocp4_delete_project "${this}"
+  ocp4_delete_project "${this}-news"
+  ocp4_delete_project "${this}-proxy"
+
+  ocp4_logout
+
+  ocp4_print_cleanup_footer
+
+}
+
+function check_content_against_regex {
+
+  local content="${1}"
+  local contentRegex="${2}"
+
+  [[ ${content} =~ ${contentRegex} ]]
+
+  return $?
+}
+
+function object_meets_criteria {
+
+  local selector="${1}"
+  local path="${2}"
+  local requirements="${3}"
+
+  local state=$(oc get ${selector} -n ${this} -o=jsonpath=${path})
+
+  [ "${requirements}" == "${state}" ]
+
+  return $?
+}
+
+function verify_ingress_gateway {
+
+  ocp4_pad "Verifying the ingress gateway"
+
+  local pathSelector='{.spec.selector.istio}{"|"}{.spec.servers..hosts}{"|"}{.spec.servers..port.number}{"|"}{.spec.servers..port.protocol}'
+  local requirements='ingressgateway|[*]|80|HTTP'
+
+  if object_meets_criteria "gateway/traffic-mesh-gateway" "${pathSelector}" "${requirements}"
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+}
+
+function verify_frontend_beta_deployment {
+
+  ocp4_pad "Verifying the beta deployment"
+
+  local pathSelector='{.spec.selector.matchLabels.app}{"|"}'
+  local pathSelector+='{.spec.selector.matchLabels.version}{"|"}'
+  local pathSelector+='{.spec.template.metadata.annotations.sidecar\.istio\.io/inject}{"|"}'
+  local pathSelector+='{.spec.template.metadata.labels.app}{"|"}'
+  local pathSelector+='{.spec.template.metadata.labels.version}{"|"}'
+  local pathSelector+='{.spec.template.spec.containers..env[0].name}{"|"}'
+  local pathSelector+='{.spec.template.spec.containers..env[0].valueFrom.configMapKeyRef.key}{"|"}'
+  local pathSelector+='{.spec.template.spec.containers..env[0].valueFrom.configMapKeyRef.name}{"|"}'
+  local pathSelector+='{.spec.template.spec.containers..image}'
+
+  local requirements='frontend|beta|true|frontend|beta|REACT_APP_GW_ENDPOINT|GW_ADDR|frontend-cm|quay.io/redhattraining/ossm-frontend:beta'
+
+  if object_meets_criteria "deployment/frontend-beta" "${pathSelector}" "${requirements}"
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+}
+
+function verify_frontend_destination_rule {
+
+  ocp4_pad "Verifying the frontend subsets"
+
+  local pathSelector='{.spec.subsets[?(@.name=="beta")].labels.version}{"|"}'
+  local pathSelector+='{.spec.subsets[?(@.name=="v2")].labels.version}'
+
+  local requirements='beta|v2'
+
+  if object_meets_criteria "destinationrule/frontend-destination-rule" "${pathSelector}" "${requirements}"
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+}
+
+function verify_frontend_virtual_service {
+
+  APPLICATION_URL=`oc get route/istio-ingressgateway -n "${istio_project}" -o=jsonpath='{"http://"}{.spec.host}{"/frontend"}'`
+
+  ocp4_pad "Verifying routes"
+
+  local betaResponse=`curl -H 'version: beta' -s ${APPLICATION_URL}`
+  local betaExpectedTitle='<title>beta: Exchange Application<\/title>'
+
+  local v2Response=`curl -s ${APPLICATION_URL}`
+  local v2ExpectedTitle='<title>Exchange Application<\/title>'
+
+  check_content_against_regex "${betaResponse}" "${betaExpectedTitle}"
+  local isBetaResponseOk=$?
+
+  check_content_against_regex "${v2Response}" "${v2ExpectedTitle}"
+  local isV2ResponseOk=$?
+
+  if [[ ${isBetaResponseOk} -eq 0 && ${isV2ResponseOk} -eq 0 ]]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+}
+
+function verify_egress_policy {
+
+  ocp4_pad "Verifying outbound traffic policy"
+
+  local mode=`oc get smcp ${istio_deployment_name} -n ${istio_project} -o=jsonpath='{.spec.istio.global.outboundTrafficPolicy.mode}'`
+
+  if [ "${mode}" == "REGISTRY_ONLY" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+}
+
+function verify_egress_service_entry {
+
+  NEWS_HOST=`oc get route/news -n "${this}-news" -o=jsonpath='{.spec.host}'`
+
+  ocp4_pad "Verifying service entry for the news service"
+
+  local pathSelector='{.spec.hosts}{"|"}{.spec.ports..number}{"|"}{.spec.ports..protocol}'
+  local requirements="[${NEWS_HOST}]|80|http"
+
+  if object_meets_criteria "serviceentry/news-se" "${pathSelector}" "${requirements}"
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

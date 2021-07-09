@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vertx-greet-v1
+spec:
+  selector:
+    matchLabels:
+      app: vertx-greet
+      version: v1
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: vertx-greet
+        version: v1
+      annotations:
+        sidecar.istio.io/inject: "true"
+    spec:
+      containers:
+        - name: vertx-greet
+          image: quay.io/redhattraining/ossm-vertx-greet:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: vertx-greet
+  name: vertx-greet
+spec:
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app: vertx-greet
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: vertx-greet-gateway
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "*"
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: vertx-greet
+  labels:
+    kiali_wizard: weighted_routing
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - vertx-greet-gateway
+  http:
+  - route:
+    - destination:
+        host: vertx-greet
+        subset: v1
+        port:
+          number: 8080
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: vertx-greet
+  labels:
+    kiali_wizard: weighted_routing
+spec:
+  host: vertx-greet
+  subsets:
+  - name: v1
+    labels:
+      version: v1

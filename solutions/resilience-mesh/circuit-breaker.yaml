@@ -1,0 +1,12 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: news-circuit
+spec:
+  host: news-resilience-mesh-news.apps.ocp4.example.com
+  trafficPolicy:
+    outlierDetection:
+      consecutiveErrors: 2
+      interval: 5s
+      baseEjectionTime: 10s
+      maxEjectionPercent: 100

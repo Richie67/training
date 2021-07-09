@@ -1,0 +1,11 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: ServiceEntry
+metadata:
+  name: news-se
+spec:
+  hosts:
+    - _NEWS_HOST_
+  ports:
+    - name: http-80
+      number: 80
+      protocol: http

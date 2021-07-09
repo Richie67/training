@@ -1,0 +1,73 @@
+#!/usr/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-deploy - lab script used to deploy and expose an application in OpenShift Service Mesh
+#
+# SYNOPSIS
+#     lab-deploy {start|finish}
+#
+#        start - verify prerequisites for exposing a service deployed in OpenShift Service Mesh
+#        finish - removes the exposed service and related resources from OpenShift Service Mesh
+#
+# DESCRIPTION
+#     This script is used to start or conclude the chapter 4 section 2 guided exercise.
+#
+# CHANGELOG
+#   * Wed Apr 01 2020 Pablo Solar Vilariño <psolarvi@redhat.com>
+#   - Initial commit
+#
+# REFERENCES
+#     Applications
+#         https://github.com/RedHatTraining/DO328-apps/tree/master/maven-simplest
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin
+
+# Initialize and set some variables
+run_as_root='true'
+
+# Required by the do328 shlib
+this='traffic-deploy'
+title='GE: Exposing a Service'
+
+istio_project='istio-system'
+istio_deployment_name='basic-install'
+
+declare -a valid_commands=(start finish)
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  ocp4_check_sm_installed ${istio_project} ${istio_deployment_name}
+  ocp4_grab_lab_files
+
+  ocp4_print_setup_header
+  ocp4_print_setup_footer
+
+}
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_cleanup_lab_files
+  ocp4_login_as_admin
+  ocp4_sm_clean_smmr
+  ocp4_delete_project 'hello'
+  ocp4_logout
+
+  ocp4_print_cleanup_footer
+
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

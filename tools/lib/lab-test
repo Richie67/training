@@ -1,0 +1,88 @@
+#!/usr/bin/bash
+#
+# Copyright 2019 Red Hat, Inc.
+#
+# NAME
+#     lab-test - lab script to demo and test new platform shlib functions
+#
+# SYNOPSIS
+#     lab-test {pad2|cnfh}
+#
+#        pad2 - test the pad2 function
+#        cnfh - test the command not found handler
+#
+# DESCRIPTION
+#     This script, based on singular argument, tests a function
+#
+# CHANGELOG
+#   * Fri Aug 23 2019 Fernando Lozano <flozano@redhat.com>
+#   - original code
+#
+# REFERENCES
+#     Applications
+#         This lab does not use any applications
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin
+
+# Initialize and set some variables
+run_as_root='true'
+this='test'
+title='Guided Exercise: Testing'
+target='workstation'
+
+# This defines which subcommands are supported (start, grade, etc.).
+# Corresponding lab_COMMAND functions must be defined.
+declare -a valid_commands=(start finish grade)
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  print_line " Check pre-requisites before doing anything..."
+
+  ocp4_print_setup_header
+
+  print_line " Do any required setup for this exercise..."
+  ocp4_grab_lab_files
+
+  ocp4_print_setup_footer
+}
+
+#Grade is ONLY for end of chapter labs!
+function lab_grade {
+
+  ocp4_print_grade_header
+
+
+  pad2 "${this} is present"
+  if ${this}; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+
+  ocp4_print_grade_footer
+}
+
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_cleanup_lab_files
+
+  ocp4_print_cleanup_footer
+}
+
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

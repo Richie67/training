@@ -1,0 +1,30 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: exchange-vservice
+spec:
+  gateways:
+  - exchange-gw
+  hosts:
+  - '*'
+  http:
+  - match:
+    - uri:
+        prefix: /exchange
+    rewrite:
+      uri: /
+    route:
+    - destination:
+        host: exchange
+        port:
+          number: 8080
+    fault:
+      delay:
+        fixedDelay: 10s
+        percentage:
+          value: 20
+      abort:
+        percentage:
+          value: 30
+        httpStatus: 500
+

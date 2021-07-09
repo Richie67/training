@@ -1,0 +1,83 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-release-dark - lab script used teach dark launches 
+#
+# SYNOPSIS
+#     lab-observe-jaeger {start|finish}
+#
+#        start - verify prerequisites lab
+#        finish - removes the resources and files created for lab
+#
+# DESCRIPTION
+#     This script is used to start or conclude the chapter 5 section 4 guided exercise.
+#
+# REFERENCES
+#     Applications
+#         https://github.com/RedHatTraining/DO328-apps/tree/master/maven-simplest (vertx-greet)
+#
+# CHANGELOG
+#   * Fri May 8 2020 Jordi Sola <jordisola@redhat.com>
+#   - Initial commit
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin
+
+# Initialize and set some variables
+run_as_root='true'
+
+# Required by the do328 shlib
+this='release-dark'
+title='GE: Deploy an Application with a Mirror Launch'
+
+istio_project='istio-system'
+istio_deployment_name='basic-install'
+
+declare -a valid_commands=(start finish)
+
+function lab_start {
+
+  ocp4_print_prereq_header
+  ocp4_is_cluster_up
+  ocp4_check_sm_installed ${istio_project} ${istio_deployment_name}
+
+  ocp4_print_setup_header
+  ocp4_grab_lab_files
+  ocp4_login_as_admin
+  ocp4_sm_add_projects_to_smmr "$this"
+  
+  ocp4_login_as_developer
+  ocp4_new_project "$this"
+  ocp4_print_smmr_state_for_project "${this}"
+  ocp4_wait_operator_ready $this "servicemeshoperator" 
+  ocp4_deploy_solutions "$this" "vertx-greet.yml"
+
+  ocp4_check_vertx_greet_app_pod_replicas "$this"
+
+  ocp4_print_setup_footer
+
+}
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_cleanup_lab_files
+  ocp4_login_as_admin
+  ocp4_sm_clean_smmr
+  ocp4_delete_project "$this"
+  ocp4_logout
+
+  ocp4_print_cleanup_footer
+
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

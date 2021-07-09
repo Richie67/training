@@ -1,0 +1,17 @@
+apiVersion: "security.istio.io/v1beta1"
+kind: "AuthorizationPolicy"
+metadata:
+  name: "mongodb-auth-policy"
+spec:
+  selector:
+    matchLabels:
+      app: mongodb
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/adoptapup/sa/animal-sa"]
+    - source:
+        principals: ["cluster.local/ns/adoptapup/sa/shelter-sa"]
+    to:
+    - operation:
+        ports: ["27017"]

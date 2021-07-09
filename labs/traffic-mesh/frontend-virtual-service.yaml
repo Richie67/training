@@ -1,0 +1,27 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: frontend-vs
+spec:
+  hosts:
+    - "*"
+  gateways:
+    - traffic-mesh-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /frontend
+          headers:
+            version:
+              exact: beta
+      route:
+        - destination:
+            host: frontend
+            subset: beta
+    - match:
+        - uri:
+            prefix: /frontend
+      route:
+        - destination:
+            host: frontend
+            subset: v2

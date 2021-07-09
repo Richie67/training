@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vertx-greet-v1
+spec:
+  selector:
+    matchLabels:
+      app: vertx-greet
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: vertx-greet
+        version: v1
+      annotations:
+        sidecar.istio.io/inject: "true"
+    spec:
+      containers:
+        - name: vertx-greet
+          image: quay.io/redhattraining/ossm-vertx-greet:1.0
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080

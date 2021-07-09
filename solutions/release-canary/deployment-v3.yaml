@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vertx-greet-v3
+spec:
+  selector:
+    matchLabels:
+      app: vertx-greet
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: vertx-greet
+        version: v3
+      annotations:
+        sidecar.istio.io/inject: "true"
+    spec:
+      containers:
+        - name: vertx-greet
+          image: quay.io/redhattraining/ossm-vertx-greet:1.0
+          ports:
+            - containerPort: 8080
+          env:
+          - name: GREETING
+            value: "Hello v3!"
+          - name: MAX_REQUESTS_PER_SECOND
+            value: "1"

@@ -1,0 +1,92 @@
+#!/bin/bash
+#
+# Copyright 2020 Red Hat, Inc.
+#
+# NAME
+#     lab-install-mesh - lab script used for verification prerequisites and successful
+#     deployment of OpenShift Service Mesh
+#
+# SYNOPSIS
+#     lab-install-mesh {start|finish|grade}
+#
+#        start - verify prerequisites for installing OpenShift Service Mesh
+#        finish - noop
+#        grade  - verify successful deployment of OpenShift Service Mesh
+#        solve  - install OpenShift Service Mesh
+#
+# DESCRIPTION
+#     This script is used to start, conclude, grade, or solve the chapter 2 section 2 guided 
+#     exercise.
+#
+# CHANGELOG
+#   * Wed Mar 25 2020 Marek Czernek <mczernek@redhat.com>
+#   - Initial commit
+#
+# REFERENCES
+#     Applications
+#         This lab does not use any applications
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin
+
+# Initialize and set some variables
+run_as_root='true'
+
+# Required by the do328 shlib
+this='install-mesh'
+title='GE: Installing Service Mesh'
+
+istio_project='istio-system'
+
+
+declare -a valid_commands=(start finish grade solve)
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+  ocp4_is_cluster_up
+  
+  ocp4_print_setup_header
+  ocp4_print_setup_footer
+
+}
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_pad 'Cleaning up the Workstation VM'
+  ocp4_delete_lab_files_if_present
+  print_SUCCESS
+
+  ocp4_print_cleanup_footer
+
+}
+
+function lab_grade {
+
+  ocp4_print_grade_header
+  ocp4_can_deploy_in_istio_system
+  ocp4_verify_sm_installed "${istio_project}" 'basic-install'
+  ocp4_print_grade_footer
+
+}
+
+function lab_solve {
+
+  ocp4_print_solve_header
+  # Solve yamls might be modified - re-download them
+  ocp4_delete_lab_files_if_present
+  ocp4_grab_lab_files
+  ocp4_install_sm ${istio_project}
+
+  ocp4_print_solve_footer
+}
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

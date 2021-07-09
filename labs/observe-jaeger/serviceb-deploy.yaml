@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: serviceb
+    version: v1
+  name: serviceb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: serviceb
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: serviceb
+        version: v1
+      annotations:
+        sidecar.istio.io/inject: "true"
+    spec:
+      containers:
+      - name: serviceb
+        image: quay.io/youruser/ossm-tracing-serviceb:1.0
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: serviceb
+  labels:
+    app: serviceb
+spec:
+  ports:
+  - name: http
+    port: 8080
+  selector:
+    app: serviceb

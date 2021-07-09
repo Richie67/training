@@ -1,0 +1,245 @@
+#!/bin/bash
+
+# CHANGELOG
+#   * Wed Jul 7 Ravi Srinivasan <ravis@redhat.com>
+#   - Change terminology as per new guidelines
+#   * Wed Apr 29 Ravi Srinivasan <ravis@redhat.com>
+#   - Added back quay.io checks
+#   * Wed Mar 18 Ravi Srinivasan <ravis@redhat.com>
+#   - Modified for DO328
+#   - cut unwanted inputs
+#   * Wed May 31 Fernando Lozano <flozano@redhat.com>
+#   - Add validation for GitHub account name
+#   - Add validation for Quay.io account name
+#   - Add validation for Nexus server
+#   * Wed May 29 Fernando Lozano <flozano@redhat.com>
+#   - Change order of prompts, so all info related to the OpenShift cluster is together
+#   * Mon May 20 Fernando Lozano <flozano@redhat.com>
+#   - Add a 'mode variable' that asks for a different sets of variables for 'development' and 'administration' courses
+#   - Add variable for nexus and developer user name and password
+#   - Add variable for github.com and quay.io account names
+#   - Add variable for nexus host name
+#   * Wed May 02 Fernando Lozano <flozano@redhat.com>
+#   - Add variable for the bastion host; assumes a bastion that accepts the same key as any course VM
+#   - Comment out API_DOMAIN variable: it creates the risk of having two valid ways of referring to services VM, registry, and so on
+#   * Wed May 01 Razique Mahroua <rmahroua@redhat.com>
+#   - Add API_DOMAIN variable
+#   * Mon Apr 29 Razique Mahroua <rmahroua@redhat.com>
+#   - Fix for cluster check
+#   * Tue Apr 26 Fernando Lozano <flozano@redhat.com>
+#   - Add variables for the services VM hostname and its registry alias
+#   * Tue Apr 25 Fernando Lozano <flozano@redhat.com>
+#   - Save copy of the kubeadmin auth files at ~student/auth for use by exercises
+#   - Do NOT fail if the admin user and password are invalid
+#   * Tue Apr 17 Fernando Lozano <flozano@redhat.com>
+#   - Add check for the Master API URL which does not require valid credentials
+#   * Tue Apr 09 Fernando Lozano <flozano@redhat.com>
+#   - Remove cluster version variable
+#   - Add wildcard domain variable
+#   * Fri Apr 05 Fernando Lozano <flozano@redhat.com>
+#   - initial version
+
+# timeout for HTTP connections using curl and oc login, in seconds
+TIMEOUT=6
+
+
+function lab_config {
+
+  # IMPORTANT: Keep this in sync with the course .shlib
+  export RHT_OCP4_CONFIG=/usr/local/etc/ocp4.config
+  export RHT_OCP4_DEFAULTS=/usr/local/etc/ocp4.defaults
+
+  source ${RHT_OCP4_DEFAULTS} &>/dev/null
+  if [ "$1" != "-d" ]; then
+    source ${RHT_OCP4_CONFIG} &>/dev/null
+  fi
+
+  ### Start taking input from students
+
+  # There are two levels of defaults: from the ocp4.defaults file and hard-coded here.
+  local master_api="${RHT_OCP4_API:-https://api.clustername.clusterdomain:6443}"
+
+  readline master_api 'OpenShift API URL'
+
+  ### Initialize reasonable defaults for most variables
+
+  # Derive default values for wildcard domain from the master api URL
+  local api_hostname=$( echo "${master_api}" | sed -e 's/[^/]*\/\/\([^@]*@\)\?\([^:/]*\).*/\2/' )
+  local api_domain=$( echo "${api_hostname}" | sed -e 's/[^.]*\.//' )
+  local wildcard_domain="${RHT_OCP4_WILDCARD_DOMAIN:-apps.${api_domain}}"
+  local web_console_url="${RHT_OCP4_WEB_CONSOLE:-https://console-openshift-console.apps.${api_domain}}"
+
+  # developer user from IdM (or other IdP)
+  local dev_user="${RHT_OCP4_DEV_USER:-developer}"
+  local dev_passwd="${RHT_OCP4_DEV_PASSWORD:-secret}"
+
+  # admin user from htpasswd (or other IdP) is optional
+  local admin_user="${RHT_OCP4_ADMIN_USER:-kubeadmin}"
+  local admin_passwd="${RHT_OCP4_ADMIN_PASSWORD:-secret}"
+
+  # quay.io username
+  local quay_user="${RHT_OCP4_QUAY_USER:-quayuser}"
+
+  ### Continue taking input from students
+
+  readline wildcard_domain 'Wildcard Domain'
+  readline web_console_url 'Web Console URL'
+  readline dev_user 'Developer User name'
+  readline dev_passwd 'Developer User Password'
+  readline admin_user 'Cluster Administrator User name'
+  readline admin_passwd 'Cluster Administrator User Password'
+  readline quay_user 'Quay.io Account User Name'
+
+  ### Display data provided by the student
+
+  echo
+  echo 'You entered:'
+  echo -e " · OpenShift API URL:\t\t\t${master_api}"
+  echo -e " · Wildcard Domain:\t\t\t${wildcard_domain}"
+  echo -e " · Web Console URL:\t\t\t${web_console_url}"
+  echo -e " · Developer User Name:\t\t\t${dev_user}"
+  echo -e " · Developer User Password:\t\t${dev_passwd}"
+  echo -e " · Cluster Administrator User Name:\t${admin_user}"
+  echo -e " · Cluster Administrator User Password:\t${admin_passwd}"
+  echo -e " · Quay.io Account User Name:\t${quay_user}"
+
+  ### Verifying data from students
+
+  echo
+  echo 'Verifying your OpenShift API URL...'
+  if ! curl --connect-timeout "${TIMEOUT}" -sk "${master_api}/apis/config.openshift.io/v1" &>/dev/null
+  then
+    fatal 2 "Cannot connect to an OpenShift 4.4 API using your URL." \
+            "Please verify you network connectivity and that the URL does not point to an OpenShift 3.x nor to a non-OpenShift Kubernetes API."
+  fi
+
+    echo
+    echo 'Verifying your OpenShift developer user credentials...'
+    if ! oc login --request-timeout "${TIMEOUT}s" -u "${dev_user}" -p "${dev_passwd}" --insecure-skip-tls-verify "${master_api}" &>/dev/null
+    then
+      fatal 4 "Cannot login to OpenShift using your developer credentials."
+    fi
+
+    echo
+    echo 'Verifying your OpenShift admin user credentials...'
+    if ! oc login --request-timeout "${TIMEOUT}s" -u "${admin_user}" -p "${admin_passwd}" --insecure-skip-tls-verify "${master_api}" &>/dev/null
+    then
+      echo "Warning: Cannot login to OpenShift using your administrator credentials."
+      echo "This is a problem only if you plan to authenticate using the kubeadmin user."
+    fi
+
+    echo
+    echo 'Verifying your Quay.io account user name...'
+    local http_status=$( curl --connect-timeout "${TIMEOUT}" -sk -o /dev/null -w '%{http_code}' "https://quay.io/api/v1/users/${quay_user}" )
+    if [ "${http_status}" != "200" ]
+    then
+      fatal 5 "Cannot find a Quay.io account named: ${quay_user}."
+    fi
+
+  # Perform these checks in the end because they require an authenticated user
+
+  #XXX OCP4 allows only cluster admins to view these resources by default.
+  #XXX Need to add permissions to everyone for these checks to work
+  #XXX see rht-developer.yaml and rht-develer-binding.yaml
+
+  echo
+  echo 'Verifying your cluster configuration...'
+  local actual=$(oc get ingresscontroller default -n openshift-ingress-operator -o jsonpath='{.status.domain}')
+  if [ "${actual}" != "${wildcard_domain}" ]
+  then
+    fatal 3 "OpenShift reports a different wildcard domain: ${actual}."
+  fi
+
+  ### All good, save the config file
+
+  echo
+  echo 'Saving your lab configuration file...'
+
+  if ! sudo touch "${RHT_OCP4_CONFIG}"
+  then
+    fatal 99 "Cannot save your lab configuration."
+  fi
+
+  sudo bash -c "cat <<EOF > ${RHT_OCP4_CONFIG}
+RHT_OCP4_API=${master_api}
+RHT_OCP4_WILDCARD_DOMAIN=${wildcard_domain}
+RHT_OCP4_WEB_CONSOLE=${web_console_url}
+EOF"
+
+    sudo bash -c "cat <<EOFDEV >> ${RHT_OCP4_CONFIG}
+RHT_OCP4_DEV_USER=${dev_user}
+RHT_OCP4_DEV_PASSWORD=${dev_passwd}
+EOFDEV"
+
+    sudo bash -c "cat <<EOFADM >> ${RHT_OCP4_CONFIG}
+RHT_OCP4_ADMIN_USER=${admin_user}
+RHT_OCP4_ADMIN_PASSWORD=${admin_passwd}
+EOFADM"
+
+    sudo bash -c "cat <<EOFQUAY >> ${RHT_OCP4_CONFIG}
+RHT_OCP4_QUAY_USER=${quay_user}
+EOFQUAY"
+
+  ### Tell students we are done
+
+  echo
+  echo 'All fine, lab config saved. You can now proceed with your exercises.'
+  echo
+}
+
+
+function error {
+  echo "$@" 1>&2
+}
+
+
+function fatal {
+  local code="$1"
+
+  error ''
+  error 'ERROR:'
+  while [ "$2" != "" ]; do
+    error "$2"
+    shift
+  done
+  error "No changes made to your lab configuration."
+  exit $code
+}
+
+
+function readline {
+  local return_var="$1"
+  local prompt_msg="$2"
+
+  local input_line=''
+
+  while [ "${input_line}" = '' ]; do
+    echo -n
+    read -e -p " · Enter the ${prompt_msg}: " -i "${!return_var}" input_line
+    if  [ "${input_line}" = '' ]; then
+      echo "   ${prompt_msg} cannot be empty. Try again."
+    fi
+  done
+
+  eval $return_var="'${input_line}'"
+}
+
+
+if ! which oc &>/dev/null
+then
+  fatal 1 "Cannot find the 'oc' command in your PATH"
+fi
+
+echo
+echo 'This script configures the connection parameters to access the OpenShift cluster for your lab scripts'
+echo
+
+if [ "$1" != "-d" -a "$1" != "" ]; then
+  echo "Usage: $( basename $0 ) [-h|-d]"
+  echo
+  echo -e "  -h: displays this help message"
+  echo -e "  -d: start from defaults instead of starting from last saved config"
+  echo
+else
+  lab_config "$@"
+fi

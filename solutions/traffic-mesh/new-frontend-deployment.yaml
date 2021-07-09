@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-beta
+labels:
+  app: frontend
+  version: beta
+spec:
+  selector:
+    matchLabels:
+      app: frontend
+      version: beta
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: frontend
+        version: beta
+      annotations:
+        sidecar.istio.io/inject: "true"
+    spec:
+      containers:
+        - name: frontend
+          image: quay.io/redhattraining/ossm-frontend:beta
+          imagePullPolicy: Always
+          env:
+            - name: REACT_APP_GW_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: frontend-cm
+                  key: GW_ADDR
